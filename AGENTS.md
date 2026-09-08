@@ -269,6 +269,7 @@ Antes de implementar:
 | 2 | FLOW 01 — character reference | ✅ implementada e testada |
 | **GATE 2.1** | **Validar FLOW 01 com arte real (`waifu_001`)** | ✅ executado — aguarda revisão humana do sheet |
 | **3A** | **Infraestrutura ComfyUI + validação do Qwen** | 🟡 código pronto e testado — execução real bloqueada por GPU |
+| **3B** | **Execução real em GPU** | ⛔ **BLOCKED** — sem GPU, sem credencial de cloud, egress bloqueado (`docs/fase-3b-BLOCKED.md`) |
 | 3 | FLOW 02 — chibi master | ⛔ não iniciada |
 | 4 | Aprovação humana | ⛔ não iniciada |
 | 5 | FLOW 03 — poses | ⛔ não iniciada |

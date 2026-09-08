@@ -652,6 +652,128 @@ def test_integration_workflow_nodes_exist():
     assert not missing, f"nodes ausentes no servidor: {missing}"
 
 
+
+
+# --- execucao REAL contra backend (servidor falso) --------------------------
+# Estes testes exercitam o caminho nao-dry-run por inteiro: upload, submit,
+# wait, download, medicao de tempo/VRAM e recipe. E o mais perto de uma
+# execucao de GPU que da para chegar sem GPU.
+
+def test_full_execution_path_against_backend():
+    with TempExperimentRepo(), FakeComfy() as fake:
+        os.environ["CHIBI_COMFY_URL"] = fake.url
+        try:
+            _clear_config_cache()
+            result = experiment.run_qwen_edit(
+                "t01", prompt="teste real", environment_name="cloud",
+                dry_run=False,
+            )
+        finally:
+            os.environ.pop("CHIBI_COMFY_URL", None)
+
+        assert result.output_path is not None
+        assert result.output_path.is_file()
+        assert result.output_path.read_bytes() == PNG_1PX
+
+        recipe = json.loads(result.recipe_path.read_text())
+        assert recipe["output_sha256"], "output sem hash"
+        assert recipe["input_sha256"], "input sem hash"
+        # (o servidor falso devolve o mesmo PNG que recebeu, entao aqui os
+        # dois hashes coincidem por construcao — nao ha o que comparar)
+        assert recipe["approval_status"] == "experimental"
+        # hardware veio do servidor, nao presumido
+        assert recipe["gpu"]["name"] == "NVIDIA L40S"
+        assert recipe["gpu"]["vram_total_gb"] == 48.0
+        assert recipe["cuda"] == "12.4"
+        assert recipe["comfyui_version"] == "0.3.99"
+        assert recipe["execution_time"] is not None
+        # servidor falso responde instantaneamente: 0.0 e valido, None nao
+        assert isinstance(recipe["cost_estimate"]["usd"], float)
+        assert "NAO e custo de producao" in recipe["cost_estimate"]["note"]
+        assert recipe["timings"]["total_seconds"] >= 0
+
+
+def test_two_runs_produce_comparable_recipes():
+    """Secao 11: duas execucoes reais, comparar metadata."""
+    with TempExperimentRepo(), FakeComfy() as fake:
+        os.environ["CHIBI_COMFY_URL"] = fake.url
+        try:
+            _clear_config_cache()
+            a = experiment.run_qwen_edit("t01", prompt="p",
+                                         environment_name="cloud", dry_run=False)
+            b = experiment.run_qwen_edit("t01", prompt="p",
+                                         environment_name="cloud", dry_run=False)
+        finally:
+            os.environ.pop("CHIBI_COMFY_URL", None)
+
+        report = experiment.compare_runs(a.run_dir, b.run_dir)
+        assert report["same_seed"] and report["same_prompt"]
+        assert report["same_model_revision"] and report["same_workflow"]
+        assert report["same_input"] and report["same_quantization"]
+        assert report["identical_output"] is True   # servidor falso: bytes iguais
+        assert "identicos" in report["verdict"]
+
+
+def test_workflow_sent_to_server_has_no_placeholders():
+    """O servidor nunca pode receber %%PLACEHOLDER%% cru."""
+    with TempExperimentRepo(), FakeComfy() as fake:
+        os.environ["CHIBI_COMFY_URL"] = fake.url
+        try:
+            _clear_config_cache()
+            experiment.run_qwen_edit("t01", prompt="p",
+                                     environment_name="cloud", dry_run=False)
+        finally:
+            os.environ.pop("CHIBI_COMFY_URL", None)
+
+        sent = json.dumps(fake.state.submitted[0]["prompt"])
+        assert "%%" not in sent
+        assert fake.state.submitted[0]["prompt"]["8"]["inputs"]["seed"] == 42
+
+
+def test_oom_during_real_execution_is_readable():
+    """Secao 16: OOM precisa virar mensagem legivel, sem retry."""
+    with TempExperimentRepo(), FakeComfy(mode="error") as fake:
+        os.environ["CHIBI_COMFY_URL"] = fake.url
+        try:
+            _clear_config_cache()
+            experiment.run_qwen_edit("t01", prompt="p",
+                                     environment_name="cloud", dry_run=False)
+        except ComfyExecutionError as exc:
+            assert "CUDA out of memory" in str(exc)
+            assert "KSampler" in str(exc)
+        else:
+            raise AssertionError("OOM deveria propagar")
+        finally:
+            os.environ.pop("CHIBI_COMFY_URL", None)
+        # sem retry: exatamente uma submissao
+        assert len(fake.state.submitted) == 1
+
+
+def test_no_retry_on_failure():
+    """Nao pode haver retry infinito (secao 16)."""
+    with TempExperimentRepo(), FakeComfy(mode="empty") as fake:
+        os.environ["CHIBI_COMFY_URL"] = fake.url
+        try:
+            _clear_config_cache()
+            experiment.run_qwen_edit("t01", prompt="p",
+                                     environment_name="cloud", dry_run=False)
+        except ComfyExecutionError:
+            pass
+        finally:
+            os.environ.pop("CHIBI_COMFY_URL", None)
+        assert len(fake.state.submitted) == 1
+
+
+def test_estimate_cost_is_honest():
+    assert experiment.estimate_cost(None, 0.6)["usd"] is None
+    assert experiment.estimate_cost(120, None)["usd"] is None
+    c = experiment.estimate_cost(3600, 0.60)
+    assert c["usd"] == 0.60
+    c2 = experiment.estimate_cost(120, 0.60)
+    assert c2["usd"] == 0.02
+    assert "NAO e custo de producao" in c2["note"]
+
+
 # --- runner -----------------------------------------------------------------
 
 if __name__ == "__main__":

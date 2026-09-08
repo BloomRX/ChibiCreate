@@ -209,6 +209,14 @@ class ComfyClient:
         info["python_version"] = system.get("python_version")
         info["pytorch_version"] = system.get("pytorch_version")
         info["os"] = system.get("os")
+        info["argv"] = system.get("argv")
+        # O ComfyUI nem sempre expoe a versao do CUDA num campo proprio; ela
+        # costuma vir embutida na string do pytorch ("2.6.0+cu124").
+        info["cuda_version"] = system.get("cuda_version") or _cuda_from_torch(
+            system.get("pytorch_version")
+        )
+        info["ram_total"] = system.get("ram_total")
+        info["ram_free"] = system.get("ram_free")
         devices = []
         for dev in stats.get("devices", []) or []:
             devices.append({
@@ -355,6 +363,17 @@ class ComfyClient:
         tmp.write_bytes(raw)
         tmp.replace(dest)
         return dest
+
+
+def _cuda_from_torch(pytorch_version: str | None) -> str | None:
+    """Extrai "12.4" de "2.6.0+cu124". Devolve None se nao houver."""
+    if not pytorch_version:
+        return None
+    import re as _re
+    if m := _re.search(r"\+cu(\d{2,4})", str(pytorch_version)):
+        digits = m.group(1)
+        return f"{int(digits[:-1])}.{digits[-1]}"
+    return None
 
 
 def _first_error(status: dict[str, Any]) -> str | None:

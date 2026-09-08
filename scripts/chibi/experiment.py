@@ -159,6 +159,56 @@ def _model_files(env_name: str) -> dict[str, str]:
     }
 
 
+def _free_vram(server: dict[str, Any]) -> int | None:
+    devices = server.get("devices") or []
+    return devices[0].get("vram_free") if devices else None
+
+
+def _gpu_block(server: dict[str, Any]) -> dict[str, Any]:
+    """Hardware que EXECUTOU, lido do proprio servidor.
+
+    Nada aqui e presumido: se o backend nao informou, fica None. Um recipe
+    que mente sobre o hardware e pior que um recipe incompleto.
+    """
+    devices = server.get("devices") or []
+    first = devices[0] if devices else {}
+    total = first.get("vram_total")
+    return {
+        "name": first.get("name"),
+        "type": first.get("type"),
+        "vram_total_bytes": total,
+        "vram_total_gb": round(total / 1024**3, 2) if total else None,
+        "vram_free_bytes_at_start": first.get("vram_free"),
+        "device_count": len(devices),
+    }
+
+
+def estimate_cost(
+    execution_seconds: float | None, usd_per_hour: float | None
+) -> dict[str, Any]:
+    """Custo aproximado de UMA execucao.
+
+    Baseline, nao previsao de producao: nao inclui tempo ocioso, cold start,
+    download de pesos nem as execucoes descartadas.
+    """
+    if execution_seconds is None or usd_per_hour is None:
+        return {
+            "usd": None,
+            "usd_per_hour": usd_per_hour,
+            "note": "sem dado suficiente para estimar",
+        }
+    return {
+        "usd": round(usd_per_hour * (execution_seconds / 3600.0), 4),
+        "usd_per_hour": usd_per_hour,
+        "execution_seconds": round(execution_seconds, 2),
+        "note": (
+            "Custo apenas do tempo desta execucao. NAO e custo de producao: "
+            "exclui cold start, download de pesos, tempo ocioso e tentativas "
+            "descartadas."
+        ),
+    }
+
+
 def build_recipe(
     *,
     run_id: str,
@@ -172,6 +222,8 @@ def build_recipe(
     server: dict[str, Any],
     environment_name: str,
     model_files: dict[str, str],
+    timings: dict[str, Any] | None = None,
+    cost: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Recipe da execucao experimental.
 
@@ -233,6 +285,15 @@ def build_recipe(
         "backend": "comfyui",
         "device": server.get("devices", [{}])[0].get("name")
         if server.get("devices") else None,
+
+        # hardware e custo (secoes 13/14/17 da spec da fase 3B)
+        "gpu": _gpu_block(server),
+        "vram_peak_bytes": (timings or {}).get("vram_peak_bytes"),
+        "cuda": server.get("cuda_version"),
+        "comfyui_version": server.get("comfyui_version"),
+        "execution_time": (timings or {}).get("execution_seconds"),
+        "timings": timings or {},
+        "cost_estimate": cost or estimate_cost(None, None),
 
         "input_sha256": sha256_file(input_path) if input_path.is_file() else None,
         "input_filename": input_path.name,
@@ -305,6 +366,8 @@ def run_qwen_edit(
     warnings: list[str] = []
     server: dict[str, Any] = {}
     output_path: Path | None = None
+    timings: dict[str, Any] = {}
+    cost: dict[str, Any] | None = None
 
     # o input vai junto: o experimento tem que ser auditavel sozinho
     local_input = run_dir / f"input{input_path.suffix}"
@@ -342,23 +405,58 @@ def run_qwen_edit(
             "escritos; nenhuma imagem gerada."
         )
     else:
+        import time as _time
+
         client = ComfyClient.from_environment(environment_name)
+        t0 = _time.time()
         server = client.server_info()
         if not server.get("reachable"):
             raise ExperimentError(
                 f"ComfyUI inacessivel: {server.get('error')}"
             )
+        timings["connect_seconds"] = round(_time.time() - t0, 2)
+
+        vram_before = _free_vram(server)
+
+        t_up = _time.time()
         uploaded = client.upload_image(input_path)
+        timings["upload_seconds"] = round(_time.time() - t_up, 2)
+
         values["INPUT_IMAGE"] = uploaded
         resolved = resolve_workflow(workflow, values)
         (run_dir / "workflow.resolved.json").write_text(
             json.dumps(resolved, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
+        t_exec = _time.time()
         job = client.submit(resolved)
         outputs = client.wait(job)
+        timings["execution_seconds"] = round(_time.time() - t_exec, 2)
+
+        # VRAM: a diferenca entre o livre antes e depois e o melhor proxy que
+        # a API do ComfyUI oferece. Nao e o pico real dentro da execucao.
+        after = client.server_info()
+        vram_after = _free_vram(after)
+        if vram_before is not None and vram_after is not None:
+            timings["vram_used_bytes"] = max(0, vram_before - vram_after)
+            timings["vram_peak_bytes"] = timings["vram_used_bytes"]
+            timings["vram_note"] = (
+                "Aproximacao: vram_free antes menos depois, via /system_stats. "
+                "NAO e o pico instantaneo durante a inferencia."
+            )
+
+        t_dl = _time.time()
         output_path = run_dir / "output.png"
         client.download(outputs[0], output_path)
+        timings["download_seconds"] = round(_time.time() - t_dl, 2)
+        timings["total_seconds"] = round(_time.time() - t0, 2)
+
+        env_cfg = config.environment(environment_name) or {}
+        cost = estimate_cost(
+            timings.get("execution_seconds"),
+            (env_cfg.get("cost", {}) or {}).get("estimated_usd_per_hour"),
+        )
+
         if len(outputs) > 1:
             warnings.append(
                 f"{len(outputs)} imagens retornadas; salvei a primeira."
@@ -376,6 +474,8 @@ def run_qwen_edit(
         server=server,
         environment_name=environment_name,
         model_files=model_files,
+        timings=timings,
+        cost=cost,
     )
     if dry_run:
         recipe["dry_run"] = True
