@@ -65,6 +65,30 @@ precisa tomar.
 Essa separação é o que permite que 5, 20 ou 100 personagens pareçam pertencer
 ao mesmo jogo. Detalhes em `docs/style-vs-identity.md`.
 
+## ⚠️ Referências recebidas, mas ainda não analisadas
+
+**12 arquivos** versionados no commit `3f138a5`: 6 em `references/chibi/` e
+6 em `references/splash/`. Inventário com sha256 e tamanho em
+`references/references.metadata.json`.
+
+**O agente não conseguiu abrir nenhum deles.** Estão em Git LFS; `git-lfs` não
+está instalado no ambiente e o CDN (`github-cloud.githubusercontent.com`) está
+bloqueado por egress. Caminhos testados:
+
+| Caminho | Resultado |
+|---|---|
+| LFS batch API | URLs assinadas obtidas — download falha no TLS |
+| tarball via `codeload` | acessível, mas devolve ponteiros |
+| `github.com/.../raw/...` | bloqueado |
+| API contents (`Accept: raw`) | devolve ponteiro |
+
+Por isso `style.yaml` tem `references.analyzed: false` e os 28 campos
+observacionais seguem `null`. **Listar não é analisar** — descrever proporção
+ou shading sem ter visto a imagem seria inventar.
+
+**Para destravar:** `git lfs pull` numa máquina com acesso, ou anexar as
+imagens diretamente na conversa.
+
 ## Estado
 
 `style.yaml` está em **v0, experimental**. Campos sem evidência visual

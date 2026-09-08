@@ -91,7 +91,7 @@ style:
   status: experimental
   source: user_reference_set
   spec_version: 0
-  references_present: false     # vira true quando references/ tiver imagens
+  references_present: true      # 12 arquivos recebidos (commit 3f138a5)
 
   # --- A. PROPORCAO ------------------------------------------------------
   # Registrar intervalo (ex: "1:2.5 a 1:3") quando um valor unico nao for
@@ -203,6 +203,27 @@ style:
   # --- REFERENCIAS -------------------------------------------------------
   # Preencher com os arquivos de styles/chibi/references/.
   # NAO incluir arte das nossas personagens aqui (ver styles/chibi/README.md).
+  # 12 referencias RECEBIDAS e versionadas (commit 3f138a5). Inventario com
+  # sha256 e tamanho em references/references.metadata.json.
+  #
+  # ATENCAO: listadas != analisadas. Os arquivos estao em Git LFS e o agente
+  # NAO conseguiu baixa-los (CDN bloqueado por egress). Por isso os campos
+  # observacionais acima continuam null: descrever proporcao ou shading sem
+  # ter visto a imagem seria inventar.
   references:
-    chibi: []                     # exemplos do RESULTADO desejado
-    splash: []                    # arte original / par splash -> chibi
+    analyzed: false               # [TEST REQUIRED] exige leitura visual
+    analysis_blocker: LFS_CDN_BLOCKED
+    chibi:                        # exemplos do RESULTADO desejado
+      - Chibi1.png
+      - Chibi2.png
+      - chibi3.jpg
+      - chibi4.jpg
+      - chibi5.jpg
+      - chibi6.jpg
+    splash:                       # arte original / par splash -> chibi
+      - splash1.png
+      - splash2.jpg
+      - splash3.png
+      - splash4.png
+      - splash5.png
+      - splash6.png

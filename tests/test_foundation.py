@@ -309,8 +309,9 @@ def test_style_yaml_v0_has_no_invented_values():
     assert style["references_present"] == has_refs, \
         "references_present nao reflete a lista de referencias"
 
-    if not has_refs:
-        # Campos puramente observacionais: nada pode estar preenchido.
+    # Receber a referencia nao e o mesmo que te-la analisado. Enquanto a
+    # analise visual nao acontecer, nenhum valor observacional pode aparecer.
+    if not refs.get("analyzed", False):
         for section in ("proportions", "face", "rendering"):
             for key, value in style[section].items():
                 assert value is None, (
