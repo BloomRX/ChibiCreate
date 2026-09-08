@@ -74,8 +74,11 @@ def model(key: str) -> dict:
 
 
 def commercially_usable(key: str) -> tuple[bool, str]:
-    """Um modelo so e tratado como dependencia comercial se estiver verified
-    E com licenca marcada como allowed. Qualquer outra coisa e recusada."""
+    """A licenca permite uso comercial E foi conferida em fonte primaria?
+
+    Nao diz nada sobre os pesos estarem disponiveis — para isso use
+    `executable()`. Um modelo pode ter licenca verificada sem pesos baixados.
+    """
     lock = models_lock()
     if key in lock.get("rejected", {}):
         return False, f"modelo REJEITADO: {lock['rejected'][key].get('reason', '')}"
@@ -84,11 +87,52 @@ def commercially_usable(key: str) -> tuple[bool, str]:
     entry = lock.get("models", {}).get(key)
     if entry is None:
         return False, "nao registrado em models.lock.yaml"
-    if entry.get("status") != "verified":
-        return False, f"status='{entry.get('status')}' (exigido: verified)"
-    lic = entry.get("license", {})
+
+    lic = entry.get("license", {}) or {}
+    if not lic.get("verified"):
+        return False, "licenca NAO conferida em fonte primaria"
     if lic.get("commercial_use") != "allowed":
         return False, f"license.commercial_use='{lic.get('commercial_use')}'"
     if not lic.get("verified_on"):
         return False, "license.verified_on ausente"
+    if not lic.get("source_url"):
+        return False, "license.source_url ausente (fonte primaria obrigatoria)"
+    if not entry.get("revision"):
+        return False, "revision nao registrada"
+    return True, f"{lic.get('spdx')} (conferido em {lic['verified_on']})"
+
+
+def weights_available(key: str) -> tuple[bool, str]:
+    """Os pesos foram baixados e o sha256 conferido?"""
+    entry = models_lock().get("models", {}).get(key)
+    if entry is None:
+        return False, "nao registrado em models.lock.yaml"
+    weights = entry.get("weights", {}) or {}
+    if not weights.get("verified"):
+        return False, "pesos nao baixados/verificados"
+    if not weights.get("sha256"):
+        return False, "weights.sha256 ausente"
     return True, "ok"
+
+
+def executable(key: str) -> tuple[bool, str]:
+    """Pode ser executado em producao: licenca ok E pesos ok."""
+    ok, why = commercially_usable(key)
+    if not ok:
+        return False, why
+    return weights_available(key)
+
+
+def license_caveat(key: str) -> str | None:
+    """Ressalva registrada na licenca (ex.: texto conflitante no README)."""
+    entry = models_lock().get("models", {}).get(key, {})
+    return (entry.get("license", {}) or {}).get("caveat")
+
+
+def models_for_phase(phase: int) -> dict[str, dict]:
+    """Modelos declarados como necessarios para uma fase."""
+    return {
+        key: entry
+        for key, entry in models_lock().get("models", {}).items()
+        if entry.get("required_for_phase") == phase
+    }

@@ -58,11 +58,32 @@ def test_environments_load():
 
 # --- licenciamento ----------------------------------------------------------
 
-def test_no_model_is_commercially_usable_yet():
-    """Nenhum modelo foi verificado. Todos devem ser recusados."""
+def test_no_model_is_executable_yet():
+    """Licenca e pesos sao niveis independentes (models.lock schema v2).
+
+    Desde 2026-09-08 duas licencas foram verificadas em fonte primaria, entao
+    'commercially_usable' pode ser True. O que continua obrigatoriamente falso
+    e a disponibilidade dos PESOS: nada foi baixado, logo nenhum modelo e
+    executavel. O agente nao baixa checkpoints.
+    """
     for key in config.models_lock()["models"]:
-        ok, why = config.commercially_usable(key)
-        assert ok is False, f"{key} nao deveria estar liberado ainda ({why})"
+        ok, why = config.weights_available(key)
+        assert ok is False, f"{key}: pesos nao deveriam estar disponiveis ({why})"
+        ok, why = config.executable(key)
+        assert ok is False, f"{key}: nao deveria ser executavel ({why})"
+
+
+def test_license_verification_requires_evidence():
+    """So passa por 'commercially_usable' quem tem fonte, revisao e data."""
+    for key in config.models_lock()["models"]:
+        ok, _ = config.commercially_usable(key)
+        if not ok:
+            continue
+        entry = config.model(key)
+        assert entry["license"]["verified"] is True
+        assert entry["license"]["verified_on"]
+        assert entry["license"]["source_url"].startswith("http")
+        assert entry["revision"], f"{key}: licenca verificada exige revisao fixada"
 
 
 def test_rejected_models_are_refused():

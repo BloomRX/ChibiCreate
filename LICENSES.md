@@ -20,22 +20,46 @@ Este arquivo é uma ferramenta de **engenharia e rastreabilidade**, não um pare
 
 ---
 
-## Modelos aprovados para uso comercial
+## Dois níveis de verificação
 
-Nenhum ainda. Um modelo só passa a `verified` depois de: pesos baixados, hash calculado, licença lida no card/repo oficial, e `verified_on` preenchido.
+`config/models.lock.yaml` (schema v2) separa duas coisas que costumam ser confundidas:
+
+- **`license.verified`** — a licença foi lida em **fonte primária** (arquivo `LICENSE` do repositório oficial ou endpoint `/api/models/<id>` do Hugging Face), com `source_url`, `verified_on` e `revision` fixada registrados. É uma verificação *documental*.
+- **`weights.verified`** — o arquivo de pesos foi **baixado** e o `sha256` conferido. É uma verificação *material*.
+
+Um modelo só é **executável** quando os dois são verdadeiros. Hoje **nenhum peso foi baixado** — o agente não baixa checkpoints (ver `AGENTS.md`). Portanto nenhum modelo é executável, mesmo os de licença já verificada.
+
+Consulte o estado atual com `chibi models`.
 
 ---
 
-## Candidatos (pesquisados, não verificados)
+## Licenças verificadas em fonte primária
 
-| Modelo | Papel | Licença declarada | Comercial | Verificado |
-|---|---|---|---|---|
-| Qwen-Image-Edit-2511 | edição / identidade | Apache-2.0 | ✅ declarado | ❌ pendente |
-| Qwen-Image-ControlNet-Union (InstantX) | controle de pose | **desconhecida** | ⚠️ **não confirmado** | ❌ pendente |
-| BiRefNet | remoção de fundo | MIT (código e pesos) | ✅ declarado | ❌ pendente |
-| RealESRGAN_x4plus_anime_6B | upscale | BSD-3-Clause | ✅ declarado | ❌ pendente |
+| Modelo | Papel | Licença | Fonte consultada | Revisão fixada | Verificado em |
+|---|---|---|---|---|---|
+| Qwen-Image-ControlNet-Union (InstantX) | controle de pose | **Apache-2.0** | [`/api/models/InstantX/Qwen-Image-ControlNet-Union`](https://huggingface.co/api/models/InstantX/Qwen-Image-ControlNet-Union) (`license` + `cardData.license`) | `b13036f066d6dee7c20513e263d3d673055e9de8` | 2026-09-08 |
+| BiRefNet | remoção de fundo | **MIT** | [`LICENSE` no GitHub oficial](https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE) + `cardData.license` no HF | `e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4` (pesos) · `ebcc0bc8` (código) | 2026-09-08 |
 
-> ⚠️ **`Qwen-Image-ControlNet-Union` é o ponto fraco atual.** A pesquisa não confirmou a licença. Precisa ser lida no card oficial antes de virar dependência. Se não houver licença clara, alternativas: ControlNet SDXL (ecossistema OpenRAIL++) ou pose bank aplicado por rig em vez de por modelo.
+### ⚠️ Ressalva registrada — ControlNet Union
+
+O README do mesmo repositório traz, na seção *Acknowledgements*, a frase **"All copyright reserved"**, que aparenta conflitar com a tag `apache-2.0` declarada nos metadados estruturados e no `cardData`.
+
+**Posição adotada:** prevalece a licença declarada formalmente nos metadados do repositório (Apache-2.0), que é o campo com significado jurídico no Hugging Face. A ressalva fica registrada em `models.lock.yaml` (campo `caveat`) e é impressa por `chibi models`.
+
+**[HUMAN REVIEW REQUIRED]** Antes de uso comercial em produção, um humano deve decidir se essa ambiguidade é aceitável ou se convém: (a) pedir esclarecimento ao mantenedor, ou (b) trocar por ControlNet SDXL (ecossistema OpenRAIL++), ou (c) aplicar poses por rig em vez de por modelo (o que o ADR-002 já favorece).
+
+> Lição de método: ler apenas o corpo do model card **não basta**. Neste caso o corpo do card e os metadados divergiam. Sempre conferir o endpoint `/api/models/<id>` e, quando existir, o arquivo `LICENSE` do repositório de código.
+
+---
+
+## Licenças ainda não verificadas
+
+| Modelo | Papel | Licença declarada | Situação |
+|---|---|---|---|
+| Qwen-Image-Edit-2511 | edição / identidade | Apache-2.0 | `[TEST REQUIRED]` — declarada em fontes secundárias; falta leitura em fonte primária |
+| RealESRGAN_x4plus_anime_6B | upscale | BSD-3-Clause | `[TEST REQUIRED]` — idem |
+
+Estes dois são recusados por `config.commercially_usable()` até que a verificação seja feita e registrada.
 
 ---
 

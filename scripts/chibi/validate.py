@@ -262,6 +262,9 @@ def validate_character(character_id: str) -> list[GateResult]:
     for src in sources:
         results.append(gate_input_valid(src))
 
+    # reference (FLOW 01), se ja existir
+    results.extend(_validate_reference(cp))
+
     # chibi master, se ja existir
     if cp.master.is_file():
         expected = (
@@ -271,6 +274,95 @@ def validate_character(character_id: str) -> list[GateResult]:
         results.append(gate_canvas_valid(cp.master, expected))
         results.append(gate_alpha_valid(cp.master))
         results.append(gate_recipe_present(cp.master))
+
+    return results
+
+
+def _validate_reference(cp: paths.CharacterPaths) -> list[GateResult]:
+    """Gates do FLOW 01. Ausencia de reference/ nao e erro — a personagem
+    pode simplesmente ainda nao ter passado pelo flow."""
+    import json
+
+    results: list[GateResult] = []
+    meta_path = cp.reference / "reference.metadata.json"
+    if not meta_path.is_file():
+        return results
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return [GateResult("REFERENCE_METADATA", False, "error",
+                           f"metadata ilegivel: {exc}", cp.id)]
+    results.append(GateResult("REFERENCE_METADATA", True, "error", "ok", cp.id))
+
+    # canvas do full_body deve bater com o projeto
+    expected = (
+        int(config.get("resolution.master.width", 1024)),
+        int(config.get("resolution.master.height", 1024)),
+    )
+    full_body = cp.reference / "full_body.png"
+    if full_body.is_file():
+        results.append(gate_canvas_valid(full_body, expected))
+
+    # todo output registrado deve existir e ter o hash declarado
+    from .hashing import sha256_file
+
+    mismatched: list[str] = []
+    missing: list[str] = []
+    for output in meta.get("outputs", []):
+        path = cp.reference / output["filename"]
+        if not path.is_file():
+            missing.append(output["filename"])
+        elif sha256_file(path) != output["sha256"]:
+            mismatched.append(output["filename"])
+
+    if missing or mismatched:
+        problems = []
+        if missing:
+            problems.append(f"ausentes: {', '.join(missing)}")
+        if mismatched:
+            problems.append(f"hash divergente: {', '.join(mismatched)}")
+        results.append(GateResult("ASSET_HASHED", False, _severity("ASSET_HASHED"),
+                                  "; ".join(problems), "reference/"))
+    else:
+        n = len(meta.get("outputs", []))
+        results.append(GateResult("ASSET_HASHED", True, _severity("ASSET_HASHED"),
+                                  f"ok ({n} arquivos conferidos)", "reference/"))
+
+    # o hash da arte-fonte precisa bater: source/ e imutavel
+    primary = meta.get("primary_source", {})
+    src = cp.source / primary.get("filename", "")
+    if src.is_file():
+        if sha256_file(src) != primary.get("sha256"):
+            results.append(GateResult(
+                "SOURCE_IMMUTABLE", False, "error",
+                f"'{src.name}' foi MODIFICADO apos o flow01 — source/ deve ser "
+                "imutavel. Restaure o original ou reprocesse.", cp.id))
+        else:
+            results.append(GateResult("SOURCE_IMMUTABLE", True, "error",
+                                      "arte-fonte intacta", cp.id))
+
+    # paleta
+    palette_path = cp.reference / "palette.json"
+    if palette_path.is_file():
+        try:
+            pal = json.loads(palette_path.read_text(encoding="utf-8"))
+            n = pal.get("n_colors", 0)
+            results.append(GateResult("PALETTE_VALID", n > 0, _severity("PALETTE_VALID"),
+                                      f"{n} cores extraidas" if n else "paleta vazia",
+                                      "palette.json"))
+        except Exception as exc:  # noqa: BLE001
+            results.append(GateResult("PALETTE_VALID", False,
+                                      _severity("PALETTE_VALID"),
+                                      f"ilegivel: {exc}", "palette.json"))
+
+    # revisao humana pendente e AVISO, nao erro: nao bloqueia o pipeline,
+    # mas precisa ficar visivel toda vez.
+    if pending := meta.get("human_review_required", []):
+        results.append(GateResult(
+            "HUMAN_REVIEW", False, "warn",
+            f"{len(pending)} item(ns) aguardando revisao humana "
+            "(ver reference.metadata.json)", cp.id))
 
     return results
 

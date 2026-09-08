@@ -1,95 +1,140 @@
 # ChibiCreate — registro travado de modelos
 #
 # REGRA DURA: nenhum modelo entra na pipeline comercial sem uma entrada aqui
-# com nome, repositório, revisão, hash, licença, URL e data de verificação.
+# com nome, repositorio, revisao, licenca, URL e data de verificacao.
 #
-# status:
-#   candidate  = pesquisado e pretendido, AINDA NÃO baixado nem verificado
-#   verified   = baixado, hash conferido, licença lida
-#   rejected   = descartado (registrar motivo)
+# DOIS NIVEIS DE VERIFICACAO — nao confundir:
 #
-# sha256: null significa "não verificado ainda". A CLI deve recusar tratar
-# como dependência comercial qualquer modelo que não esteja verified.
+#   license.verified: true   licenca lida em FONTE PRIMARIA, revisao registrada
+#   weights.verified: true   arquivo baixado e sha256 conferido
 #
-# Nenhum download foi feito. Nenhum hash foi calculado. Ver LICENSES.md.
+# Um modelo pode ter licenca verificada sem ter pesos baixados. Isso e normal.
+# Para uso comercial exigimos license.verified. Para EXECUTAR exigimos tambem
+# weights.verified.
+#
+# A pipeline NAO baixa modelos automaticamente (AGENTS.md §2).
 
-schema_version: 1
+schema_version: 2
 last_reviewed: "2026-09-08"
 
 models:
 
   qwen_image_edit_2511:
     role: identity_edit
-    status: candidate
     display_name: Qwen-Image-Edit-2511
     repo: Qwen/Qwen-Image-Edit-2511
-    source_url: https://huggingface.co/Qwen
+    source_url: https://huggingface.co/Qwen/Qwen-Image-Edit-2511
     revision: null
-    files: []
-    sha256: null
     license:
       spdx: Apache-2.0
       commercial_use: allowed
+      verified: false            # [TEST REQUIRED] ler card oficial
       verified_on: null
-      source_url: https://comfy.org/workflows/model/qwen-image-edit/
+      source_url: null
       notes: >
-        Licença dos PESOS é Apache 2.0. Isso NÃO resolve questões de dataset de
-        treino, outputs ou termos de serviços hospedados. Ver LICENSES.md.
+        Licenca Apache 2.0 relatada em fontes secundarias; ainda NAO conferida
+        no card oficial. Nao promover a verified sem essa checagem.
+    weights:
+      verified: false
+      files: []
+      sha256: null
     vram_notes: "Q4_0 ~11.9GB / Q4_K_M ~13.2GB / FP8 ~20.5GB / BF16 ~40.9GB"
     runs_on: cloud
+    required_for_phase: 3
 
   qwen_image_controlnet_union:
     role: pose_control
-    status: candidate
     display_name: Qwen-Image-ControlNet-Union (InstantX)
     repo: InstantX/Qwen-Image-ControlNet-Union
     source_url: https://huggingface.co/InstantX/Qwen-Image-ControlNet-Union
-    revision: null
-    files: []
-    sha256: null
+    revision: b13036f066d6dee7c20513e263d3d673055e9de8
+    revision_date: "2025-08-26T18:09:04Z"
     license:
-      spdx: null
-      commercial_use: unverified
-      verified_on: null
-      source_url: https://huggingface.co/InstantX/Qwen-Image-ControlNet-Union
-      notes: >
-        [TEST REQUIRED] Licença do ControlNet Union NAO foi confirmada na
-        pesquisa. Precisa ser lida no card oficial antes de uso comercial.
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      source_url: https://huggingface.co/api/models/InstantX/Qwen-Image-ControlNet-Union
+      evidence: >
+        Metadados oficiais do repositorio HuggingFace (endpoint /api/models)
+        na revisao b13036f0: cardData.license = "apache-2.0" e tag
+        "license:apache-2.0". Card confirma os modos canny, soft edge, depth
+        e pose. Modelo de 2B params, BF16.
+      caveat: >
+        ATENCAO: a secao "Acknowledgements" do README do mesmo repositorio diz
+        "All copyright reserved", o que aparenta conflitar com a tag Apache-2.0
+        declarada nos metadados. A licenca declarada formalmente prevalece para
+        fins de registro, mas o conflito fica documentado. Se o uso comercial
+        deste componente se tornar critico, confirmar com o InstantX Team.
+        Ver LICENSES.md.
+    weights:
+      verified: false
+      files:
+        - diffusion_pytorch_model.safetensors
+      sha256: null
+      note: "Pesos nao baixados. Necessario apenas na FASE 5."
+    params: 1768003584
+    dtype: BF16
     runs_on: cloud
+    required_for_phase: 5
 
   birefnet:
     role: background_removal
-    status: candidate
     display_name: BiRefNet (general)
     repo: ZhengPeng7/BiRefNet
     source_url: https://github.com/ZhengPeng7/BiRefNet
-    revision: null
-    files: []
-    sha256: null
+    weights_url: https://huggingface.co/ZhengPeng7/BiRefNet
+    revision: e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4
+    revision_date: "2026-02-04T22:43:55Z"
+    code_revision: ebcc0bc8ec7fe919cec829f2dea656b3078acddc
     license:
       spdx: MIT
       commercial_use: allowed
-      verified_on: null
-      source_url: https://aireiter.com/blog/best-background-removal-api
-      notes: "Codigo E pesos MIT. Confirmar no repo oficial antes de verified."
+      verified: true
+      verified_on: "2026-09-08"
+      source_url: https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE
+      evidence: >
+        Repositorio oficial GitHub ZhengPeng7/BiRefNet contem arquivo LICENSE
+        MIT (commit 2713d1293ce8a923d5878f1f30177b78770bf24c, "Add the MIT
+        LICENSE."). O repositorio de PESOS no HuggingFace
+        (ZhengPeng7/BiRefNet, revisao e2bf8e44) declara cardData.license =
+        "mit" e tag "license:mit". Codigo E pesos sob MIT — comercial livre.
+      notes: >
+        Paper: CAAI AIR'24, arXiv 2401.03407. Existem variantes (general, HR,
+        portrait, matting); esta entrada cobre a "general". Registrar variante
+        adicional como entrada propria se for adotada.
+    weights:
+      verified: false
+      files:
+        - model.safetensors
+      sha256: null
+      size_note: "~220M params (F16)"
+      note: >
+        Pesos nao baixados. Necessario na FASE 2 apenas se o isolamento
+        automatico de fundo for exigido; o FLOW 01 opera sem ele quando a
+        arte-fonte ja possui alpha.
     runs_on: local
+    required_for_phase: 2
 
   real_esrgan_anime_6b:
     role: upscale
-    status: candidate
     display_name: RealESRGAN_x4plus_anime_6B
     repo: xinntao/Real-ESRGAN
     source_url: https://github.com/xinntao/Real-ESRGAN
     revision: null
-    files: []
-    sha256: null
     license:
       spdx: BSD-3-Clause
       commercial_use: allowed
+      verified: false            # [TEST REQUIRED] conferir LICENSE no repo
       verified_on: null
-      source_url: https://onegen.ai/project/enhancing-image-quality-with-real-esrgan-a-comprehensive-guide/
+      source_url: null
       notes: "Preferir checkpoint .safetensors; evitar PickleTensor."
+    weights:
+      verified: false
+      files: []
+      sha256: null
     runs_on: local
+    required_for_phase: 3
 
 # Modelos explicitamente REJEITADOS para dependencia comercial.
 rejected:

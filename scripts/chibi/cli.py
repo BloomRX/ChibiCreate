@@ -75,8 +75,20 @@ identity_anchors: []
 #   - fita vermelha no cabelo, lado esquerdo
 #   - lanterna presa ao cinto
 
-# Papeis de referencia disponiveis. Preenchido pelo flow01.
+# Papeis de referencia disponiveis. Preenchido automaticamente pelo flow01.
 reference_roles: {{}}
+
+# Overrides dos recortes do identity kit, em fracoes da CAIXA DO SUJEITO
+# (0.0 = topo/esquerda do sujeito, 1.0 = base/direita).
+# Use quando o recorte heuristico do flow01 sair errado.
+# Exemplo:
+#   reference_regions:
+#     face:
+#       top: 0.03
+#       bottom: 0.18
+#       left: 0.25
+#       right: 0.75
+reference_regions: {{}}
 
 # Overrides do rig padrao definido em config/project.yaml.
 rig:
@@ -182,12 +194,26 @@ def cmd_models(args: argparse.Namespace) -> int:
     lock = config.models_lock()
     _echo(f"  ultima revisao: {lock.get('last_reviewed', '?')}\n")
 
-    for r in gate_model_licensing():
-        entry = lock["models"][r.subject]
-        _echo(f"  [{entry.get('status', '?'):<9}] {entry.get('display_name')}")
-        _echo(f"              papel: {entry.get('role')} | roda em: {entry.get('runs_on')}")
-        _echo(f"              licenca: {entry.get('license', {}).get('spdx') or 'DESCONHECIDA'}")
-        _echo(f"              comercial: {r.message}")
+    for key, entry in lock.get("models", {}).items():
+        lic_ok, lic_why = config.commercially_usable(key)
+        w_ok, w_why = config.weights_available(key)
+        lic = entry.get("license", {}) or {}
+
+        _echo(f"  {entry.get('display_name')}")
+        _echo(f"     papel        : {entry.get('role')} | roda em: {entry.get('runs_on')}"
+              f" | fase: {entry.get('required_for_phase', '?')}")
+        _echo(f"     licenca      : {lic.get('spdx') or 'DESCONHECIDA'}"
+              f"  [{'VERIFICADA' if lic_ok else 'nao verificada'}]")
+        if not lic_ok:
+            _echo(f"                    -> {lic_why}")
+        else:
+            _echo(f"                    -> {lic_why}")
+            _echo(f"                    fonte: {lic.get('source_url')}")
+        if rev := entry.get("revision"):
+            _echo(f"     revision     : {rev}")
+        _echo(f"     pesos        : {'baixados/conferidos' if w_ok else w_why}")
+        if caveat := config.license_caveat(key):
+            _echo(f"     [!] RESSALVA : {' '.join(caveat.split())[:200]}")
         _echo("")
 
     if rejected := lock.get("rejected", {}):
@@ -284,8 +310,47 @@ def cmd_selftest(args: argparse.Namespace) -> int:
 # stubs — fases 2..8
 # ---------------------------------------------------------------------------
 
-def cmd_flow01(a): return _not_implemented(
-    "flow01", "FASE 2", "BiRefNet local + scripts de normalizacao")
+def cmd_flow01(args: argparse.Namespace) -> int:
+    """FLOW 01 — character reference. Deterministico, roda 100% local."""
+    from . import flow01
+
+    _header(f"FLOW 01 — character reference: {args.id}")
+    try:
+        result = flow01.run(
+            args.id, source_name=getattr(args, "source", None),
+            force=getattr(args, "force", False),
+        )
+    except flow01.Flow01Error as exc:
+        _echo(f"ERRO: {exc}")
+        return EXIT_FAIL
+
+    _echo(f"  fonte principal: {result.primary_source}")
+    norm = result.metadata.get("normalization", {})
+    if norm:
+        _echo(f"  normalizacao   : escala {norm.get('scale')} -> canvas "
+              f"{norm.get('canvas')} (sujeito {norm.get('subject_size')})")
+    _echo(f"  alpha          : {result.metadata.get('alpha_origin')}")
+
+    _echo("\n  Arquivos gerados:")
+    for path in sorted(result.outputs):
+        _echo(f"    {path.relative_to(paths.ROOT)}")
+
+    if result.warnings:
+        _echo("\n  Avisos:")
+        for w in result.warnings:
+            _echo(f"    - {w}")
+
+    if result.human_review:
+        _echo("")
+        for item in result.human_review:
+            _echo(f"  {item}")
+
+    _echo("\n  Proximos passos:")
+    _echo(f"    1. inspecione characters/{args.id}/reference/sheet.png")
+    _echo(f"    2. rode: chibi validate {args.id}")
+    _echo(f"    3. se aprovado: chibi status {args.id} --set REFERENCE_READY "
+          f"--by <seu-nome>")
+    return EXIT_OK
 
 
 def cmd_flow02(a): return _not_implemented(
@@ -356,9 +421,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_self = sub.add_parser("selftest", help="checagem de sanidade da fundacao")
     p_self.set_defaults(func=cmd_selftest)
 
+    p_f1 = sub.add_parser("flow01", help="character reference (deterministico, local)")
+    p_f1.add_argument("id")
+    p_f1.add_argument("--source", help="nome do arquivo em source/ a usar como principal")
+    p_f1.add_argument("--force", action="store_true", help="sobrescrever reference/")
+    p_f1.set_defaults(func=cmd_flow01)
+
     # stubs
     for name, func, helptext in (
-        ("flow01", cmd_flow01, "[fase 2] character reference"),
         ("flow02", cmd_flow02, "[fase 3] chibi master (candidatos)"),
         ("approve", cmd_approve, "[fase 4] aprovacao humana"),
         ("flow03", cmd_flow03, "[fase 5] poses"),
