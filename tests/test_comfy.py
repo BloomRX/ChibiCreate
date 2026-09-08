@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from chibi import comfy_client, config, experiment, paths  # noqa: E402
+from chibi import comfy_client, config, experiment, paths, preflight  # noqa: E402
 from chibi.comfy_client import (ComfyClient, ComfyClientNotConfigured,  # noqa: E402
                                 ComfyError, ComfyExecutionError, ComfyJob,
                                 ComfyOutput, ComfyTimeout)
@@ -93,22 +93,59 @@ def make_handler(state: FakeComfyState):
             if self.path == "/system_stats":
                 if state.mode == "badjson":
                     return self._send(200, None, raw=b"<html>nao json</html>")
-                return self._send(200, {
-                    "system": {"comfyui_version": "0.3.99",
-                               "python_version": "3.12.0",
-                               "pytorch_version": "2.6.0+cu124",
-                               "os": "posix"},
-                    "devices": [{"name": "NVIDIA L40S", "type": "cuda",
-                                 "vram_total": 48 * 1024**3,
-                                 "vram_free": 47 * 1024**3}],
-                })
+                system = {"comfyui_version": "0.3.99",
+                          "python_version": "3.12.0",
+                          "pytorch_version": "2.6.0+cu124",
+                          "os": "posix"}
+                if state.mode == "no_gpu":
+                    devices = []
+                elif state.mode == "cpu_only":
+                    devices = [{"name": "cpu", "type": "cpu",
+                                "vram_total": 0, "vram_free": 0}]
+                elif state.mode == "small_gpu":
+                    devices = [{"name": "NVIDIA RTX 2070", "type": "cuda",
+                                "vram_total": 8 * 1024**3,
+                                "vram_free": 7 * 1024**3}]
+                elif state.mode == "no_vram_info":
+                    devices = [{"name": "NVIDIA L40S", "type": "cuda"}]
+                else:
+                    devices = [{"name": "NVIDIA L40S", "type": "cuda",
+                                "vram_total": 48 * 1024**3,
+                                "vram_free": 47 * 1024**3}]
+                return self._send(200, {"system": system, "devices": devices})
             if self.path == "/object_info":
-                return self._send(200, {
-                    "UNETLoader": {}, "CLIPLoader": {}, "VAELoader": {},
-                    "LoadImage": {}, "TextEncodeQwenImageEditPlus": {},
-                    "EmptySD3LatentImage": {}, "KSampler": {},
-                    "VAEDecode": {}, "SaveImage": {},
-                })
+                if state.mode == "no_object_info":
+                    return self._send(200, {})
+                nodes = {"UNETLoader": {}, "CLIPLoader": {}, "VAELoader": {},
+                         "LoadImage": {}, "TextEncodeQwenImageEditPlus": {},
+                         "EmptySD3LatentImage": {}, "KSampler": {},
+                         "VAEDecode": {}, "SaveImage": {}}
+                if state.mode == "missing_node":
+                    nodes.pop("TextEncodeQwenImageEditPlus")
+                if state.mode == "bad_socket":
+                    # servidor conhece o node, mas com outros inputs
+                    nodes["KSampler"] = {"input": {"required": {
+                        "seed": [], "steps": [], "cfg": [],
+                        "sampler_name": [], "scheduler": [],
+                        "model": [], "positive": [], "negative": [],
+                        "latent_image": []}}}   # 'denoise' ausente de proposito
+                return self._send(200, nodes)
+            if self.path.startswith("/models/"):
+                folder = self.path.rsplit("/", 1)[-1]
+                if state.mode == "with_models":
+                    return self._send(200, {
+                        "diffusion_models":
+                            ["qwen_image_edit_2511_fp8_e4m3fn.safetensors"],
+                        "text_encoders":
+                            ["qwen_2.5_vl_7b_fp8_scaled.safetensors"],
+                        "vae": ["qwen_image_vae.safetensors"],
+                    }.get(folder, []))
+                if state.mode == "no_models":
+                    return self._send(200, {
+                        "diffusion_models": ["outro_modelo.safetensors"],
+                        "text_encoders": [], "vae": [],
+                    }.get(folder, []))
+                return self._send(404, {"error": "sem endpoint /models"})
             if self.path.startswith("/history/"):
                 state.polls += 1
                 if state.mode == "slow" and state.polls < 1000:
@@ -772,6 +809,249 @@ def test_estimate_cost_is_honest():
     c2 = experiment.estimate_cost(120, 0.60)
     assert c2["usd"] == 0.02
     assert "NAO e custo de producao" in c2["note"]
+
+
+# --- FASE 3B.1: preflight remoto -------------------------------------------
+
+def _preflight_against(fake, **kw):
+    os.environ["CHIBI_COMFY_URL"] = fake.url
+    try:
+        _clear_config_cache()
+        return preflight.run("cloud", **kw)
+    finally:
+        os.environ.pop("CHIBI_COMFY_URL", None)
+
+
+def test_preflight_all_green_on_healthy_server():
+    _use_real_repo()
+    with FakeComfy() as fake:
+        report = _preflight_against(fake)
+        assert report.ready is True, [c.status for c in report.blockers]
+        assert report.server["comfyui_version"] == "0.3.99"
+        assert report.server["cuda_version"] == "12.4"
+        names = {c.name: c.status for c in report.checks}
+        assert names["endpoint"] == preflight.OK
+        assert names["gpu"] == preflight.OK
+        assert names["workflow"] == preflight.OK
+
+
+def test_preflight_endpoint_unreachable():
+    _use_real_repo()
+    os.environ["CHIBI_COMFY_URL"] = "http://127.0.0.1:1"
+    try:
+        _clear_config_cache()
+        report = preflight.run("cloud")
+    finally:
+        os.environ.pop("CHIBI_COMFY_URL", None)
+    assert report.ready is False
+    assert report.checks[0].status == preflight.ENDPOINT_UNREACHABLE
+
+
+def test_preflight_not_configured_without_url():
+    _use_real_repo()
+    saved = os.environ.pop("CHIBI_COMFY_URL", None)
+    try:
+        _clear_config_cache()
+        report = preflight.run("cloud")
+    finally:
+        if saved:
+            os.environ["CHIBI_COMFY_URL"] = saved
+    assert report.ready is False
+    assert report.checks[0].status == preflight.NOT_CONFIGURED
+
+
+def test_preflight_detects_missing_node():
+    """WORKFLOW_INCOMPATIBLE quando falta um class_type."""
+    _use_real_repo()
+    with FakeComfy(mode="missing_node") as fake:
+        report = _preflight_against(fake)
+        wf = next(c for c in report.checks if c.name == "workflow")
+        assert wf.status == preflight.WORKFLOW_INCOMPATIBLE
+        assert "TextEncodeQwenImageEditPlus" in wf.data["missing"]
+        assert report.ready is False
+
+
+def test_preflight_detects_socket_mismatch():
+    """Input que o servidor nao reconhece: expected vs actual documentado."""
+    _use_real_repo()
+    with FakeComfy(mode="bad_socket") as fake:
+        report = _preflight_against(fake)
+        wf = next(c for c in report.checks if c.name == "workflow")
+        assert wf.status == preflight.WORKFLOW_INCOMPATIBLE
+        mismatches = wf.data["socket_mismatches"]
+        assert mismatches
+        assert all({"workflow_node", "expected", "actual"} <= set(m)
+                   for m in mismatches)
+
+
+def test_preflight_object_info_missing():
+    _use_real_repo()
+    with FakeComfy(mode="no_object_info") as fake:
+        report = _preflight_against(fake)
+        wf = next(c for c in report.checks if c.name == "workflow")
+        assert wf.status == preflight.OBJECT_INFO_MISSING
+        assert report.ready is False
+
+
+def test_preflight_model_missing():
+    """MODEL_MISSING: o arquivo esperado nao esta no servidor."""
+    _use_real_repo()
+    with FakeComfy(mode="no_models") as fake:
+        report = _preflight_against(fake)
+        models = next(c for c in report.checks if c.name == "models")
+        assert models.status == preflight.MODEL_MISSING
+        assert "unet" in models.data["missing"]
+        assert "NAO troque de modelo" in models.detail
+
+
+def test_preflight_model_present():
+    _use_real_repo()
+    with FakeComfy(mode="with_models") as fake:
+        report = _preflight_against(fake)
+        models = next(c for c in report.checks if c.name == "models")
+        assert models.status == preflight.OK, models.detail
+
+
+def test_preflight_model_unknown_when_server_has_no_endpoint():
+    """Sem /models, nao da para afirmar: UNKNOWN, e UNKNOWN nao bloqueia."""
+    _use_real_repo()
+    with FakeComfy() as fake:   # modo ok: /models devolve 404
+        report = _preflight_against(fake)
+        models = next(c for c in report.checks if c.name == "models")
+        assert models.status == preflight.UNKNOWN
+        assert models.blocking is False
+
+
+def test_preflight_gpu_missing():
+    _use_real_repo()
+    with FakeComfy(mode="no_gpu") as fake:
+        report = _preflight_against(fake)
+        gpu = next(c for c in report.checks if c.name == "gpu")
+        assert gpu.status == preflight.GPU_MISSING
+        assert report.ready is False
+
+
+def test_preflight_cpu_only_is_gpu_missing():
+    _use_real_repo()
+    with FakeComfy(mode="cpu_only") as fake:
+        gpu = next(c for c in _preflight_against(fake).checks
+                   if c.name == "gpu")
+        assert gpu.status == preflight.GPU_MISSING
+
+
+def test_preflight_gpu_insufficient_vram():
+    """cloud.yaml exige 24GB; servidor oferece 8GB."""
+    _use_real_repo()
+    with FakeComfy(mode="small_gpu") as fake:
+        gpu = next(c for c in _preflight_against(fake).checks
+                   if c.name == "gpu")
+        assert gpu.status == preflight.GPU_INSUFFICIENT
+        assert "8.0 GB" in gpu.detail and "24" in gpu.detail
+
+
+def test_preflight_vram_unknown_does_not_block():
+    _use_real_repo()
+    with FakeComfy(mode="no_vram_info") as fake:
+        report = _preflight_against(fake)
+        gpu = next(c for c in report.checks if c.name == "gpu")
+        assert gpu.status == preflight.UNKNOWN
+        assert gpu.blocking is False
+
+
+def test_preflight_malformed_response():
+    _use_real_repo()
+    with FakeComfy(mode="badjson") as fake:
+        report = _preflight_against(fake)
+        assert report.ready is False
+        assert report.checks[0].status == preflight.ENDPOINT_UNREACHABLE
+
+
+def test_preflight_never_runs_inference():
+    """Preflight nao pode enfileirar job algum."""
+    _use_real_repo()
+    with FakeComfy(mode="with_models") as fake:
+        _preflight_against(fake)
+        assert fake.state.submitted == [], "preflight enviou job para a GPU!"
+        assert fake.state.uploaded == []
+
+
+def test_preflight_report_serializes():
+    _use_real_repo()
+    with FakeComfy() as fake:
+        data = _preflight_against(fake).to_dict()
+        json.dumps(data)   # nao pode explodir
+        assert set(data) >= {"environment", "ready", "server", "checks"}
+
+
+# --- FASE 3B.1: seguranca ---------------------------------------------------
+
+def test_redact_url_strips_credentials():
+    from chibi.comfy_client import redact_url
+    assert redact_url("https://u:p@h:8188/x") == "https://***@h:8188/x"
+    assert "abc123" not in redact_url("http://h:8188/?token=abc123")
+    assert redact_url(None) == "<nao definida>"
+    assert redact_url("http://h:8188") == "http://h:8188"
+
+
+def test_client_never_exposes_raw_url_in_errors():
+    """URL com credencial nao pode vazar em mensagem de erro."""
+    client = ComfyClient("http://user:segredo@127.0.0.1:1", connect_timeout=2)
+    info = client.server_info()
+    assert "segredo" not in json.dumps(info)
+    assert "segredo" not in info["error"]
+    assert info["base_url"] == "http://***@127.0.0.1:1"
+
+
+def test_token_never_lands_in_recipe():
+    """Authorization/token jamais entram no recipe."""
+    with TempExperimentRepo(), FakeComfy() as fake:
+        os.environ["CHIBI_COMFY_URL"] = fake.url
+        os.environ["CHIBI_COMFY_TOKEN"] = "SEGREDO-NAO-VAZAR"
+        try:
+            _clear_config_cache()
+            result = experiment.run_qwen_edit(
+                "t01", prompt="p", environment_name="cloud", dry_run=False)
+        finally:
+            os.environ.pop("CHIBI_COMFY_URL", None)
+            os.environ.pop("CHIBI_COMFY_TOKEN", None)
+        blob = result.recipe_path.read_text()
+        assert "SEGREDO-NAO-VAZAR" not in blob
+        assert "Authorization" not in blob
+        assert "Bearer" not in blob
+
+
+def test_no_credentials_committed_in_config():
+    """Nenhum segredo literal nos YAML versionados."""
+    import re
+    suspicious = re.compile(
+        r"(hf_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9]{16,}|Bearer\s+[A-Za-z0-9._-]{12,}"
+        r"|(api[_-]?key|password|secret)\s*:\s*['\"]?[A-Za-z0-9._-]{12,})",
+        re.IGNORECASE)
+    for path in (ROOT / "config").rglob("*.yaml"):
+        text = path.read_text(encoding="utf-8")
+        assert not suspicious.search(text), f"possivel segredo em {path.name}"
+
+
+def test_cloud_config_has_no_hardcoded_url_or_token():
+    _use_real_repo()
+    env = config.environment("cloud")
+    block = env["comfyui"]
+    assert block.get("base_url_env") == "CHIBI_COMFY_URL"
+    assert block.get("token_env") == "CHIBI_COMFY_TOKEN"
+    saved = os.environ.pop("CHIBI_COMFY_URL", None)
+    try:
+        _clear_config_cache()
+        assert config.environment("cloud")["comfyui"].get("base_url") is None
+    finally:
+        if saved:
+            os.environ["CHIBI_COMFY_URL"] = saved
+        _clear_config_cache()
+
+
+def test_cloud_config_has_no_local_machine_paths():
+    text = (ROOT / "config/environments/cloud.yaml").read_text(encoding="utf-8")
+    for bad in ("/home/user", "/Users/", "C:\\", "/tmp/"):
+        assert bad not in text, f"path especifico da maquina: {bad}"
 
 
 # --- runner -----------------------------------------------------------------

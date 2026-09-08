@@ -270,6 +270,7 @@ Antes de implementar:
 | **GATE 2.1** | **Validar FLOW 01 com arte real (`waifu_001`)** | ✅ executado — aguarda revisão humana do sheet |
 | **3A** | **Infraestrutura ComfyUI + validação do Qwen** | 🟡 código pronto e testado — execução real bloqueada por GPU |
 | **3B** | **Execução real em GPU** | ⛔ **BLOCKED** — sem GPU, sem credencial de cloud, egress bloqueado (`docs/fase-3b-BLOCKED.md`) |
+| **3B.1** | **Remote GPU readiness** (preflight, model discovery, segredos) | ✅ pronto — basta `CHIBI_COMFY_URL` |
 | 3 | FLOW 02 — chibi master | ⛔ não iniciada |
 | 4 | Aprovação humana | ⛔ não iniciada |
 | 5 | FLOW 03 — poses | ⛔ não iniciada |
@@ -294,6 +295,26 @@ geométrica**. Nunca por preferência estética. Qualquer alteração vira ADR.
 
 ---
 
+## 11-B. Segredos e endpoints remotos
+
+Regras que valem para qualquer backend remoto (ComfyUI, GPU alugada, API):
+
+1. **Nada de credencial no Git.** Os YAML de `config/environments/` guardam
+   apenas o *nome* da variável (`base_url_env: CHIBI_COMFY_URL`), nunca o
+   valor. Há teste que varre `config/**.yaml` atrás de segredos literais.
+2. **Token nunca em log, nem em recipe.** O header `Authorization` é montado
+   na hora da requisição e não é persistido em lugar nenhum. Teste:
+   `test_token_never_lands_in_recipe`.
+3. **URL sempre redigida antes de sair.** Provedores entregam URLs com
+   credencial embutida (`https://user:senha@host`) ou token na query. Use
+   `client.safe_url` / `comfy_client.redact_url()` em qualquer print,
+   mensagem de erro ou campo de recipe. Nunca `self.base_url` cru.
+4. **Não imprimir a query string** de URLs remotas — costuma conter token.
+5. Ao adicionar um provider novo, repetir as quatro regras acima e cobrir com
+   teste antes de usar.
+
+---
+
 ## 12. Decisões arquiteturais congeladas
 
 Não reabrir sem discussão explícita. Ver `docs/decisions/`.
@@ -306,6 +327,7 @@ Não reabrir sem discussão explícita. Ver `docs/decisions/`.
 | ADR-004 | Licença tem dois eixos: `technical_status` × `commercial_status` |
 | ADR-005 | GATE 2.1: fallback de bbox sem alpha; `outfit` cobre a silhueta inteira |
 | ADR-006 | Qwen roda em backend GPU remoto; infraestrutura desacoplada do local |
+| — | Fase 3B.1: preflight remoto e redação de credenciais (sem ADR próprio) |
 
 Três eixos ortogonais que nunca devem se misturar:
 

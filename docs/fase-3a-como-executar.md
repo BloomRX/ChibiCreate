@@ -32,9 +32,14 @@ export CHIBI_COMFY_TOKEN=<token>     # se o backend exigir
 ## 3. Conferir antes de gastar GPU
 
 ```bash
-chibi comfy status  --env cloud     # servidor vivo? qual GPU? quanta VRAM?
-chibi comfy validate --env cloud    # os nodes do workflow existem mesmo?
+chibi comfy status    --env cloud   # servidor vivo? qual GPU? quanta VRAM?
+chibi comfy preflight --env cloud   # TUDO pronto? (endpoint+GPU+nodes+modelos)
+chibi comfy validate  --env cloud   # so os nodes do workflow
 ```
+
+`comfy preflight` é a checagem completa e é a recomendada: cobre endpoint,
+VRAM, nodes, sockets e presença dos arquivos de modelo, sem gastar GPU.
+Ver `docs/fase-3b-como-conectar-gpu.md`.
 
 `comfy validate` compara cada `class_type` contra o `/object_info` do
 servidor. É a checagem que evita descobrir um nome de node errado no meio de

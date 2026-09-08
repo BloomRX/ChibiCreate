@@ -65,6 +65,31 @@ class ComfyOutput:
     node_id: str | None = None
 
 
+def redact_url(url: str | None) -> str:
+    """URL segura para log: remove credenciais embutidas e query string.
+
+    `https://user:senha@host:8188/x?token=abc` -> `https://***@host:8188/x?<query oculta>`
+
+    Provedores de GPU costumam entregar URLs com token no userinfo ou na
+    query. Elas acabam em log, em mensagem de erro e em recipe — e viram
+    vazamento de credencial.
+    """
+    if not url:
+        return "<nao definida>"
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "<url invalida>"
+
+    netloc = parts.netloc
+    if "@" in netloc:
+        netloc = "***@" + netloc.rsplit("@", 1)[1]
+    query = "<query oculta>" if parts.query else ""
+    return urllib.parse.urlunsplit(
+        (parts.scheme, netloc, parts.path, query, "")
+    )
+
+
 def _env_value(env_block: dict[str, Any], direct_key: str, env_key: str) -> str | None:
     """Le um valor que pode vir do YAML ou de variavel de ambiente.
 
@@ -101,6 +126,11 @@ class ComfyClient:
         self.connect_timeout = connect_timeout
         self.environment = environment
         self.client_id = str(uuid.uuid4())
+
+    @property
+    def safe_url(self) -> str:
+        """URL sem credenciais — a unica forma segura de logar/registrar."""
+        return redact_url(self.base_url)
 
     # -- construcao a partir da configuracao ---------------------------------
 
@@ -173,8 +203,8 @@ class ComfyClient:
             raise ComfyError(f"{method} {path} -> HTTP {exc.code}. {body}") from exc
         except urllib.error.URLError as exc:
             raise ComfyError(
-                f"{method} {path} -> servidor inacessivel em {self.base_url} "
-                f"({exc.reason})"
+                f"{method} {path} -> servidor inacessivel em "
+                f"{self.safe_url} ({exc.reason})"
             ) from exc
         except TimeoutError as exc:
             raise ComfyError(f"{method} {path} -> timeout de conexao") from exc
@@ -194,7 +224,7 @@ class ComfyClient:
 
     def server_info(self) -> dict[str, Any]:
         """Resumo do backend, para registrar no recipe."""
-        info: dict[str, Any] = {"base_url": self.base_url,
+        info: dict[str, Any] = {"base_url": self.safe_url,
                                 "environment": self.environment}
         try:
             stats = self.ping()

@@ -353,6 +353,46 @@ def cmd_comfy(args: argparse.Namespace) -> int:
                   f"({total / 1024**3:.1f} GB, livre {free / 1024**3:.1f} GB)")
         return EXIT_OK
 
+    if args.subcommand == "preflight":
+        from . import preflight
+
+        _header(f"Preflight — ambiente '{env_name}'")
+        report = preflight.run(env_name,
+                               workflow_name=getattr(args, "workflow", None))
+
+        if report.server.get("base_url"):
+            _echo(f"  endereco : {report.server['base_url']}")
+        for key, label in (("comfyui_version", "comfyui"),
+                           ("pytorch_version", "pytorch"),
+                           ("cuda_version", "cuda")):
+            if value := report.server.get(key):
+                _echo(f"  {label:9}: {value}")
+        _echo("")
+
+        marks = {preflight.OK: "OK  ", preflight.UNKNOWN: "?   "}
+        for check in report.checks:
+            mark = marks.get(check.status, "FALHA")
+            _echo(f"  [{mark}] {check.name}: {check.status}")
+            if check.detail:
+                _echo(f"          {check.detail}")
+            for mismatch in check.data.get("socket_mismatches", [])[:10]:
+                _echo(f"            node    : {mismatch['workflow_node']}")
+                _echo(f"            expected: {mismatch['expected']}")
+                _echo(f"            actual  : {mismatch['actual']}")
+
+        _echo("")
+        if report.ready:
+            _echo("  PRONTO para uma execucao real.")
+            if report.unknowns:
+                _echo(f"  ({len(report.unknowns)} item(ns) que o servidor nao "
+                      "informou — ver '?' acima)")
+            return EXIT_OK
+
+        _echo(f"  NAO PRONTO — {len(report.blockers)} bloqueio(s):")
+        for check in report.blockers:
+            _echo(f"    - {check.status} em '{check.name}'")
+        return EXIT_FAIL
+
     # validate
     wf_name = getattr(args, "workflow", None) or experiment.DEFAULT_WORKFLOW
     _header(f"Validando workflow: {wf_name}")
@@ -569,6 +609,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_cs = comfy_sub.add_parser("status", help="o servidor esta acessivel?")
     p_cs.add_argument("--env", help="ambiente (default: config/project.yaml)")
     p_cs.set_defaults(func=cmd_comfy)
+    p_pf = comfy_sub.add_parser(
+        "preflight", help="tudo pronto para executar? (nao usa GPU)")
+    p_pf.add_argument("--env")
+    p_pf.add_argument("--workflow")
+    p_pf.set_defaults(func=cmd_comfy)
     p_cv = comfy_sub.add_parser("validate", help="conferir nodes do workflow")
     p_cv.add_argument("--env")
     p_cv.add_argument("--workflow", help="ex: experimental/qwen_edit_minimal")

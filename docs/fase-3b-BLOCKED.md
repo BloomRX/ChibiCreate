@@ -124,6 +124,16 @@ de que o servidor **nunca** recebe `%%PLACEHOLDER%%` cru.
 
 ---
 
+## Preparação concluída (Fase 3B.1)
+
+O repositório já está pronto para a execução real: existe
+`chibi comfy preflight`, model discovery, coleta de GPU/VRAM/CUDA e proteção
+de credenciais. **Basta fornecer `CHIBI_COMFY_URL`** — nenhuma alteração de
+código será necessária. Passo a passo em
+`docs/fase-3b-como-conectar-gpu.md`.
+
+---
+
 ## Como destravar
 
 Qualquer uma das opções, **por decisão humana**:
