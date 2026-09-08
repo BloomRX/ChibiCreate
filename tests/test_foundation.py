@@ -235,15 +235,14 @@ def test_gitignore_protects_work_and_models():
 # --- stubs de fases futuras -------------------------------------------------
 
 def test_future_modules_fail_loudly():
-    from chibi.comfy_client import ComfyClient, ComfyClientNotConfigured
-    from chibi import spritesheet, godot_export, sheet
+    """Modulos de fases futuras precisam falhar alto, nao silenciosamente.
 
-    try:
-        ComfyClient()
-    except ComfyClientNotConfigured:
-        pass
-    else:
-        raise AssertionError("ComfyClient deveria recusar instanciacao")
+    ComfyClient saiu desta lista na FASE 3A: agora e implementado de verdade
+    (ver tests/test_comfy.py). O que ele ainda deve fazer e recusar um
+    ambiente sem backend configurado — coberto por
+    test_local_environment_refuses_by_default.
+    """
+    from chibi import spritesheet, godot_export, sheet
 
     for fn in (spritesheet.pack, godot_export.write_spriteframes,
                sheet.build_contact_sheet):

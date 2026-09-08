@@ -45,3 +45,9 @@ Thumbs.db
 .env
 *.token
 secrets.yaml
+
+# Saidas experimentais (fase 3A): imagens grandes, nao versionar.
+# Os recipes.json SAO versionados — sao a evidencia auditavel.
+experiments/**/*.png
+experiments/**/*.jpg
+experiments/**/*.webp

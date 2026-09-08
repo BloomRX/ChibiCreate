@@ -1,0 +1,675 @@
+"""Testes da FASE 3A — cliente ComfyUI e execucoes experimentais.
+
+Nenhum teste aqui exige GPU nem rede externa. Onde e preciso um servidor,
+subimos um ComfyUI FALSO em http.server no localhost, que fala o mesmo
+protocolo. Testes que exigem GPU real ficam marcados [integration test] e
+sao pulados quando nao ha backend configurado.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from chibi import comfy_client, config, experiment, paths  # noqa: E402
+from chibi.comfy_client import (ComfyClient, ComfyClientNotConfigured,  # noqa: E402
+                                ComfyError, ComfyExecutionError, ComfyJob,
+                                ComfyOutput, ComfyTimeout)
+
+PNG_1PX = bytes.fromhex(
+    "89504e470d0a1a0a0000000d494844520000000100000001080600000"
+    "01f15c4890000000d49444154789c6360000002000100ffff03000006"
+    "00057b7d5f0000000049454e44ae426082"
+)
+
+
+
+def _clear_config_cache() -> None:
+    """Limpa os loaders cacheados de config (lru_cache)."""
+    for name in ("project", "models_lock", "quality_gates"):
+        fn = getattr(config, name, None)
+        if fn is not None and hasattr(fn, "cache_clear"):
+            fn.cache_clear()
+
+
+
+_PATH_ATTRS = ("ROOT", "CONFIG_DIR", "ENVIRONMENTS_DIR", "PROJECT_CONFIG",
+               "MODELS_LOCK", "QUALITY_GATES", "CHARACTERS_DIR")
+_REAL_PATHS = {name: getattr(paths, name) for name in _PATH_ATTRS}
+
+
+def _point_paths_at(root: Path) -> None:
+    paths.ROOT = root
+    paths.CONFIG_DIR = root / "config"
+    paths.ENVIRONMENTS_DIR = root / "config" / "environments"
+    paths.PROJECT_CONFIG = root / "config" / "project.yaml"
+    paths.MODELS_LOCK = root / "config" / "models.lock.yaml"
+    paths.QUALITY_GATES = root / "config" / "quality_gates.yaml"
+    paths.CHARACTERS_DIR = root / "characters"
+    _clear_config_cache()
+
+
+def _use_real_repo() -> None:
+    """Garante que o teste ve o repositorio real, nao um temporario."""
+    for name, value in _REAL_PATHS.items():
+        setattr(paths, name, value)
+    _clear_config_cache()
+
+
+# --- servidor ComfyUI falso -------------------------------------------------
+
+class FakeComfyState:
+    def __init__(self) -> None:
+        self.mode = "ok"            # ok | error | slow | empty | badjson
+        self.submitted: list[dict] = []
+        self.uploaded: list[str] = []
+        self.polls = 0
+
+
+def make_handler(state: FakeComfyState):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_a):  # silencio
+            pass
+
+        def _send(self, code: int, payload, raw: bytes | None = None):
+            body = raw if raw is not None else json.dumps(payload).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):  # noqa: N802
+            if self.path == "/system_stats":
+                if state.mode == "badjson":
+                    return self._send(200, None, raw=b"<html>nao json</html>")
+                return self._send(200, {
+                    "system": {"comfyui_version": "0.3.99",
+                               "python_version": "3.12.0",
+                               "pytorch_version": "2.6.0+cu124",
+                               "os": "posix"},
+                    "devices": [{"name": "NVIDIA L40S", "type": "cuda",
+                                 "vram_total": 48 * 1024**3,
+                                 "vram_free": 47 * 1024**3}],
+                })
+            if self.path == "/object_info":
+                return self._send(200, {
+                    "UNETLoader": {}, "CLIPLoader": {}, "VAELoader": {},
+                    "LoadImage": {}, "TextEncodeQwenImageEditPlus": {},
+                    "EmptySD3LatentImage": {}, "KSampler": {},
+                    "VAEDecode": {}, "SaveImage": {},
+                })
+            if self.path.startswith("/history/"):
+                state.polls += 1
+                if state.mode == "slow" and state.polls < 1000:
+                    return self._send(200, {})
+                pid = self.path.rsplit("/", 1)[-1]
+                if state.mode == "error":
+                    return self._send(200, {pid: {"status": {
+                        "status_str": "error", "completed": False,
+                        "messages": [["execution_error", {
+                            "node_id": "8", "node_type": "KSampler",
+                            "exception_message": "CUDA out of memory"}]]}}})
+                if state.mode == "empty":
+                    return self._send(200, {pid: {
+                        "status": {"status_str": "success", "completed": True},
+                        "outputs": {}}})
+                return self._send(200, {pid: {
+                    "status": {"status_str": "success", "completed": True},
+                    "outputs": {"10": {"images": [
+                        {"filename": "out_0001.png", "subfolder": "chibi_exp",
+                         "type": "output"}]}}}})
+            if self.path.startswith("/view"):
+                return self._send(200, None, raw=PNG_1PX)
+            return self._send(404, {"error": "not found"})
+
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            if self.path == "/upload/image":
+                state.uploaded.append(str(len(body)))
+                return self._send(200, {"name": "input.png",
+                                        "subfolder": "chibi", "type": "input"})
+            if self.path == "/prompt":
+                payload = json.loads(body)
+                state.submitted.append(payload)
+                if state.mode == "reject":
+                    return self._send(200, {"node_errors": {
+                        "1": {"errors": [{"message": "node desconhecido"}]}}})
+                return self._send(200, {"prompt_id": "fake-prompt-123",
+                                        "number": 1})
+            return self._send(404, {"error": "not found"})
+
+    return Handler
+
+
+class FakeComfy:
+    def __init__(self, mode: str = "ok"):
+        self.state = FakeComfyState()
+        self.state.mode = mode
+
+    def __enter__(self) -> FakeComfy:
+        self.server = HTTPServer(("127.0.0.1", 0), make_handler(self.state))
+        self.port = self.server.server_address[1]
+        self.url = f"http://127.0.0.1:{self.port}"
+        self.thread = threading.Thread(target=self.server.serve_forever,
+                                       daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+        return False
+
+    def client(self, **kw) -> ComfyClient:
+        kw.setdefault("poll_interval_seconds", 0.01)
+        kw.setdefault("timeout_seconds", 5)
+        return ComfyClient(self.url, **kw)
+
+
+# --- cliente: caminho feliz -------------------------------------------------
+
+def test_ping_and_server_info():
+    with FakeComfy() as fake:
+        info = fake.client().server_info()
+        assert info["reachable"] is True
+        assert info["comfyui_version"] == "0.3.99"
+        assert info["devices"][0]["name"] == "NVIDIA L40S"
+
+
+def test_submit_and_wait_returns_outputs():
+    with FakeComfy() as fake:
+        client = fake.client()
+        job = client.submit({"1": {"class_type": "SaveImage", "inputs": {}}})
+        assert job.prompt_id == "fake-prompt-123"
+        outputs = client.wait(job)
+        assert len(outputs) == 1
+        assert outputs[0].filename == "out_0001.png"
+        assert outputs[0].subfolder == "chibi_exp"
+
+
+def test_download_writes_file_atomically():
+    with FakeComfy() as fake, tempfile.TemporaryDirectory() as tmpdir:
+        dest = Path(tmpdir) / "sub" / "out.png"
+        fake.client().download(ComfyOutput("out_0001.png", "chibi_exp"), dest)
+        assert dest.is_file() and dest.read_bytes() == PNG_1PX
+        assert not list(Path(tmpdir).rglob("*.tmp"))
+
+
+def test_upload_image_sends_multipart():
+    with FakeComfy() as fake, tempfile.TemporaryDirectory() as tmpdir:
+        src = Path(tmpdir) / "input.png"
+        src.write_bytes(PNG_1PX)
+        name = fake.client().upload_image(src)
+        assert name == "chibi/input.png"
+        assert fake.state.uploaded
+
+
+# --- cliente: caminhos de falha ---------------------------------------------
+
+def test_comfyui_unavailable():
+    """Servidor fora do ar."""
+    client = ComfyClient("http://127.0.0.1:1", connect_timeout=2)
+    info = client.server_info()
+    assert info["reachable"] is False
+    assert "inacessivel" in info["error"]
+
+
+def test_wrong_endpoint_gives_clear_error():
+    with FakeComfy() as fake:
+        try:
+            fake.client()._get_json("/rota/que/nao/existe")
+        except ComfyError as exc:
+            assert "404" in str(exc)
+        else:
+            raise AssertionError("deveria falhar")
+
+
+def test_invalid_workflow_is_rejected():
+    with FakeComfy(mode="reject") as fake:
+        try:
+            fake.client().submit({"1": {"class_type": "NaoExiste", "inputs": {}}})
+        except ComfyExecutionError as exc:
+            assert "rejeitado" in str(exc)
+        else:
+            raise AssertionError("deveria recusar workflow invalido")
+
+
+def test_empty_workflow_refused_before_network():
+    client = ComfyClient("http://127.0.0.1:1")
+    for bad in ({}, None, "texto"):
+        try:
+            client.submit(bad)  # type: ignore[arg-type]
+        except ComfyError:
+            pass
+        else:
+            raise AssertionError(f"deveria recusar {bad!r}")
+
+
+def test_execution_error_surfaces_node_and_message():
+    """Erro de GPU precisa chegar legivel ao usuario."""
+    with FakeComfy(mode="error") as fake:
+        try:
+            fake.client().wait(ComfyJob("fake-prompt-123", "c"))
+        except ComfyExecutionError as exc:
+            assert "KSampler" in str(exc)
+            assert "CUDA out of memory" in str(exc)
+        else:
+            raise AssertionError("deveria propagar o erro de execucao")
+
+
+def test_timeout_is_raised_and_explains():
+    with FakeComfy(mode="slow") as fake:
+        client = fake.client(timeout_seconds=1, poll_interval_seconds=0.05)
+        try:
+            client.wait(ComfyJob("fake-prompt-123", "c"), timeout=1)
+        except ComfyTimeout as exc:
+            assert "nao terminou" in str(exc)
+        else:
+            raise AssertionError("deveria estourar timeout")
+
+
+def test_completed_without_image_is_an_error():
+    with FakeComfy(mode="empty") as fake:
+        try:
+            fake.client().wait(ComfyJob("fake-prompt-123", "c"), timeout=2)
+        except ComfyExecutionError as exc:
+            assert "sem produzir imagem" in str(exc)
+        else:
+            raise AssertionError("deveria reclamar de output ausente")
+
+
+def test_non_json_response():
+    with FakeComfy(mode="badjson") as fake:
+        try:
+            fake.client().ping()
+        except ComfyError as exc:
+            assert "nao-JSON" in str(exc)
+        else:
+            raise AssertionError("deveria detectar resposta nao-JSON")
+
+
+def test_upload_missing_file():
+    with FakeComfy() as fake:
+        try:
+            fake.client().upload_image(Path("/nao/existe.png"))
+        except ComfyError as exc:
+            assert "nao existe" in str(exc)
+        else:
+            raise AssertionError("deveria falhar")
+
+
+# --- configuracao: nada de localhost hardcoded ------------------------------
+
+def test_local_environment_refuses_by_default():
+    _use_real_repo()
+    try:
+        ComfyClient.from_environment("local")
+    except ComfyClientNotConfigured as exc:
+        assert "enabled" in str(exc)
+    else:
+        raise AssertionError("ambiente local nao deveria estar habilitado")
+
+
+def test_unknown_environment_refused():
+    _use_real_repo()
+    try:
+        ComfyClient.from_environment("ambiente_inexistente")
+    except ComfyClientNotConfigured:
+        pass
+    else:
+        raise AssertionError("deveria recusar ambiente inexistente")
+
+
+def test_cloud_needs_url_from_env_var():
+    _use_real_repo()
+    saved = os.environ.pop("CHIBI_COMFY_URL", None)
+    try:
+        ComfyClient.from_environment("cloud")
+    except ComfyClientNotConfigured as exc:
+        assert "CHIBI_COMFY_URL" in str(exc)
+    else:
+        raise AssertionError("deveria exigir a variavel de ambiente")
+    finally:
+        if saved:
+            os.environ["CHIBI_COMFY_URL"] = saved
+
+
+def test_url_comes_from_environment_variable():
+    _use_real_repo()
+    saved = os.environ.get("CHIBI_COMFY_URL")
+    os.environ["CHIBI_COMFY_URL"] = "http://gpu-box.example:8188"
+    try:
+        _clear_config_cache()
+        client = ComfyClient.from_environment("cloud")
+        assert client.base_url == "http://gpu-box.example:8188"
+    finally:
+        if saved is None:
+            os.environ.pop("CHIBI_COMFY_URL", None)
+        else:
+            os.environ["CHIBI_COMFY_URL"] = saved
+        _clear_config_cache()
+
+
+def test_no_hardcoded_localhost_in_source():
+    """O endereco do backend nunca pode estar cravado no codigo."""
+    for name in ("comfy_client.py", "experiment.py"):
+        src = (ROOT / "scripts" / "chibi" / name).read_text(encoding="utf-8")
+        code = "\n".join(
+            line for line in src.splitlines()
+            if not line.strip().startswith("#")
+        )
+        for bad in ("127.0.0.1:8188", "localhost:8188"):
+            assert bad not in code, f"{name} tem {bad} hardcoded"
+
+
+# --- workflow ---------------------------------------------------------------
+
+def test_workflow_file_is_valid_json():
+    _use_real_repo()
+    wf = experiment.load_workflow()
+    nodes = experiment.workflow_nodes(wf)
+    assert len(nodes) >= 8
+    assert all("class_type" in n for n in nodes.values())
+
+
+def test_workflow_has_save_and_load_nodes():
+    _use_real_repo()
+    nodes = experiment.workflow_nodes(experiment.load_workflow())
+    classes = {n["class_type"] for n in nodes.values()}
+    assert "LoadImage" in classes and "SaveImage" in classes
+
+
+def test_missing_workflow_fails_clearly():
+    _use_real_repo()
+    try:
+        experiment.load_workflow("nao/existe")
+    except experiment.ExperimentError as exc:
+        assert "nao encontrado" in str(exc)
+    else:
+        raise AssertionError("deveria falhar")
+
+
+def test_resolve_workflow_preserves_types():
+    """%%SEED%% sozinho vira int, nao string."""
+    wf = {"8": {"class_type": "KSampler",
+                "inputs": {"seed": "%%SEED%%", "cfg": "%%CFG%%",
+                           "text": "prefixo %%NAME%% sufixo"}}}
+    out = experiment.resolve_workflow(
+        wf, {"SEED": 42, "CFG": 2.5, "NAME": "x"}
+    )
+    assert out["8"]["inputs"]["seed"] == 42
+    assert isinstance(out["8"]["inputs"]["seed"], int)
+    assert out["8"]["inputs"]["cfg"] == 2.5
+    assert out["8"]["inputs"]["text"] == "prefixo x sufixo"
+
+
+def test_resolve_workflow_detects_missing_placeholder():
+    try:
+        experiment.resolve_workflow(
+            {"1": {"class_type": "X", "inputs": {"a": "%%NAO_TENHO%%"}}}, {}
+        )
+    except experiment.ExperimentError as exc:
+        assert "NAO_TENHO" in str(exc)
+    else:
+        raise AssertionError("deveria detectar placeholder sem valor")
+
+
+def test_resolve_workflow_strips_comments():
+    resolved = experiment.resolve_workflow(
+        {"_comment": ["nota"], "1": {"class_type": "X", "inputs": {}}}, {}
+    )
+    assert "_comment" not in resolved
+
+
+# --- experimento ------------------------------------------------------------
+
+class TempExperimentRepo:
+    """Repo temporario com waifu-like pronta para experimento."""
+
+    def __enter__(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / "config/environments").mkdir(parents=True)
+        for rel in ("config/project.yaml", "config/models.lock.yaml",
+                    "config/quality_gates.yaml",
+                    "config/environments/local.yaml",
+                    "config/environments/cloud.yaml"):
+            shutil.copy2(ROOT / rel, self.root / rel)
+        wf_dir = self.root / "workflows/experimental/qwen_edit_minimal"
+        wf_dir.mkdir(parents=True)
+        shutil.copy2(
+            ROOT / "workflows/experimental/qwen_edit_minimal/v1.json",
+            wf_dir / "v1.json",
+        )
+        cdir = self.root / "characters/t01/reference"
+        cdir.mkdir(parents=True)
+        (cdir / "full_body.png").write_bytes(PNG_1PX)
+        (self.root / "characters/t01/character.yaml").write_text(
+            "id: t01\n", encoding="utf-8"
+        )
+        self._saved = (paths.ROOT, paths.CHARACTERS_DIR, paths.ENVIRONMENTS_DIR)
+        paths.ROOT = self.root
+        paths.CHARACTERS_DIR = self.root / "characters"
+        paths.ENVIRONMENTS_DIR = self.root / "config/environments"
+        _clear_config_cache()
+        return self
+
+    def __exit__(self, *exc):
+        (paths.ROOT, paths.CHARACTERS_DIR, paths.ENVIRONMENTS_DIR) = self._saved
+        _clear_config_cache()
+        self._tmp.cleanup()
+        return False
+
+
+def test_experiment_dry_run_produces_recipe():
+    with TempExperimentRepo() as repo:
+        result = experiment.run_qwen_edit(
+            "t01", prompt="teste", environment_name="cloud", dry_run=True
+        )
+        assert result.run_id == "run_001"
+        recipe = json.loads(result.recipe_path.read_text())
+        assert recipe["approval_status"] == "experimental"
+        assert recipe["dry_run"] is True
+        assert recipe["input_sha256"]
+        assert recipe["output_sha256"] is None
+        assert (result.run_dir / "workflow.resolved.json").is_file()
+        assert (result.run_dir / "input.png").is_file()
+        _ = repo
+
+
+def test_experiment_never_marks_approved():
+    """Nenhum caminho de codigo pode aprovar um experimento."""
+    with TempExperimentRepo():
+        result = experiment.run_qwen_edit(
+            "t01", prompt="p", environment_name="cloud", dry_run=True
+        )
+        recipe = json.loads(result.recipe_path.read_text())
+        assert recipe["approval_status"] == "experimental"
+        assert recipe["approved_by"] is None
+        assert recipe["approved_at"] is None
+        assert "NAO e um asset" in recipe["note"]
+
+
+def test_experiment_writes_outside_character_dir():
+    """Experimento nao contamina characters/<id>/."""
+    with TempExperimentRepo() as repo:
+        result = experiment.run_qwen_edit(
+            "t01", prompt="p", environment_name="cloud", dry_run=True
+        )
+        assert "experiments" in result.run_dir.parts
+        assert not (repo.root / "characters/t01/chibi").exists()
+
+
+def test_experiment_run_ids_increment():
+    with TempExperimentRepo():
+        a = experiment.run_qwen_edit("t01", prompt="p",
+                                     environment_name="cloud", dry_run=True)
+        b = experiment.run_qwen_edit("t01", prompt="p",
+                                     environment_name="cloud", dry_run=True)
+        assert (a.run_id, b.run_id) == ("run_001", "run_002")
+
+
+def test_experiment_missing_character():
+    with TempExperimentRepo():
+        try:
+            experiment.run_qwen_edit("fantasma", prompt="p",
+                                     environment_name="cloud", dry_run=True)
+        except experiment.ExperimentError as exc:
+            assert "nao existe" in str(exc)
+        else:
+            raise AssertionError("deveria falhar")
+
+
+def test_experiment_missing_input():
+    with TempExperimentRepo() as repo:
+        (repo.root / "characters/t01/reference/full_body.png").unlink()
+        try:
+            experiment.run_qwen_edit("t01", prompt="p",
+                                     environment_name="cloud", dry_run=True)
+        except experiment.ExperimentError as exc:
+            assert "flow01" in str(exc)
+        else:
+            raise AssertionError("deveria exigir o input")
+
+
+def test_experiment_refuses_unverified_model():
+    with TempExperimentRepo():
+        try:
+            experiment.run_qwen_edit(
+                "t01", prompt="p", environment_name="cloud",
+                model_key="real_esrgan_anime_6b", dry_run=True,
+            )
+        except experiment.ExperimentError as exc:
+            assert "nao liberado" in str(exc)
+        else:
+            raise AssertionError("modelo sem licenca verificada deveria ser barrado")
+
+
+def test_experiment_refuses_rejected_model():
+    with TempExperimentRepo():
+        try:
+            experiment.run_qwen_edit("t01", prompt="p",
+                                     environment_name="cloud",
+                                     model_key="bria_rmbg_2_0", dry_run=True)
+        except experiment.ExperimentError:
+            pass
+        else:
+            raise AssertionError("modelo rejeitado deveria ser barrado")
+
+
+def test_recipe_has_all_required_fields():
+    """Campos exigidos pela secao 11 da spec da fase 3A."""
+    with TempExperimentRepo():
+        result = experiment.run_qwen_edit("t01", prompt="p",
+                                          environment_name="cloud", dry_run=True)
+        recipe = json.loads(result.recipe_path.read_text())
+        for field_ in ("model", "revision", "model_sha256", "license",
+                       "workflow", "workflow_sha256", "seed", "prompt",
+                       "parameters", "quantization", "dtype", "device",
+                       "environment", "input_sha256", "output_sha256",
+                       "timestamp"):
+            assert field_ in recipe, f"recipe sem o campo '{field_}'"
+
+
+def test_recipe_records_exact_model_revision():
+    with TempExperimentRepo():
+        result = experiment.run_qwen_edit("t01", prompt="p",
+                                          environment_name="cloud", dry_run=True)
+        recipe = json.loads(result.recipe_path.read_text())
+        assert recipe["revision"] == "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9"
+        assert recipe["license"] == "Apache-2.0"
+        assert recipe["license_verified"] is True
+
+
+def test_compare_runs_detects_same_config():
+    with TempExperimentRepo():
+        a = experiment.run_qwen_edit("t01", prompt="p", environment_name="cloud",
+                                     dry_run=True)
+        b = experiment.run_qwen_edit("t01", prompt="p", environment_name="cloud",
+                                     dry_run=True)
+        report = experiment.compare_runs(a.run_dir, b.run_dir)
+        assert report["same_seed"] and report["same_prompt"]
+        assert report["same_workflow"] and report["same_model_revision"]
+        assert report["identical_output"] is False   # dry-run: sem bytes
+
+
+def test_compare_runs_detects_different_seed():
+    with TempExperimentRepo():
+        a = experiment.run_qwen_edit("t01", prompt="p", environment_name="cloud",
+                                     dry_run=True)
+        b = experiment.run_qwen_edit("t01", prompt="p", environment_name="cloud",
+                                     overrides={"seed": 999}, dry_run=True)
+        assert experiment.compare_runs(a.run_dir, b.run_dir)["same_seed"] is False
+
+
+def test_compare_runs_missing_recipe():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            experiment.compare_runs(Path(tmpdir), Path(tmpdir))
+        except experiment.ExperimentError as exc:
+            assert "recipe ausente" in str(exc)
+        else:
+            raise AssertionError("deveria falhar")
+
+
+# --- integracao (exigem GPU real) -------------------------------------------
+
+def _integration_enabled() -> bool:
+    return bool(os.environ.get("CHIBI_COMFY_URL"))
+
+
+def test_integration_real_backend_reachable():
+    """[integration test] Exige CHIBI_COMFY_URL apontando para GPU real."""
+    if not _integration_enabled():
+        return  # pulado: sem backend configurado
+    client = ComfyClient.from_environment("cloud")
+    info = client.server_info()
+    assert info["reachable"], info.get("error")
+    assert info.get("devices"), "backend sem GPU visivel"
+
+
+def test_integration_workflow_nodes_exist():
+    """[integration test] Confere os class_type contra o servidor real."""
+    if not _integration_enabled():
+        return
+    client = ComfyClient.from_environment("cloud")
+    available = client.object_info()
+    nodes = experiment.workflow_nodes(experiment.load_workflow())
+    missing = [n["class_type"] for n in nodes.values()
+               if n["class_type"] not in available]
+    assert not missing, f"nodes ausentes no servidor: {missing}"
+
+
+# --- runner -----------------------------------------------------------------
+
+if __name__ == "__main__":
+    funcs = [(n, f) for n, f in sorted(globals().items())
+             if n.startswith("test_") and callable(f)]
+    failed = skipped = 0
+    for name, fn in funcs:
+        if name.startswith("test_integration_") and not _integration_enabled():
+            skipped += 1
+            print(f"  SKIP  {name} [integration test: sem CHIBI_COMFY_URL]")
+            continue
+        try:
+            fn()
+            print(f"  PASS  {name}")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"  FAIL  {name}: {type(exc).__name__}: {exc}")
+    total = len(funcs) - skipped
+    print(f"\n{total - failed}/{total} passaram" +
+          (f" ({skipped} pulados)" if skipped else ""))
+    sys.exit(1 if failed else 0)

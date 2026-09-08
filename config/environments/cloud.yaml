@@ -17,6 +17,16 @@ comfyui:
   timeout_seconds: 900
   poll_interval_seconds: 2
 
+  # Nomes dos arquivos de modelo COMO O SERVIDOR OS ENXERGA (dentro de
+  # ComfyUI/models/unet, /clip, /vae). NAO sao caminhos desta maquina.
+  # [TEST REQUIRED] nomes nao confirmados contra um servidor real.
+  models:
+    unet: qwen_image_edit_2511_fp8_e4m3fn.safetensors
+    clip: qwen_2.5_vl_7b_fp8_scaled.safetensors
+    vae: qwen_image_vae.safetensors
+    # fp8 escolhido por caber em 24GB; BF16 exigiria ~41GB.
+    weight_dtype: fp8_e4m3fn
+
 capabilities:
   gpu_inference: true
   cpu_tools: false

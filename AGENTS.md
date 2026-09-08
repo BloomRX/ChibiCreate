@@ -268,6 +268,7 @@ Antes de implementar:
 | 1 | Fundação: estrutura, config, recipes, gates, CLI | ✅ concluída |
 | 2 | FLOW 01 — character reference | ✅ implementada e testada |
 | **GATE 2.1** | **Validar FLOW 01 com arte real (`waifu_001`)** | ✅ executado — aguarda revisão humana do sheet |
+| **3A** | **Infraestrutura ComfyUI + validação do Qwen** | 🟡 código pronto e testado — execução real bloqueada por GPU |
 | 3 | FLOW 02 — chibi master | ⛔ não iniciada |
 | 4 | Aprovação humana | ⛔ não iniciada |
 | 5 | FLOW 03 — poses | ⛔ não iniciada |
@@ -303,6 +304,7 @@ Não reabrir sem discussão explícita. Ver `docs/decisions/`.
 | ADR-003 | ComfyUI é executor; **Git é a fonte da verdade** |
 | ADR-004 | Licença tem dois eixos: `technical_status` × `commercial_status` |
 | ADR-005 | GATE 2.1: fallback de bbox sem alpha; `outfit` cobre a silhueta inteira |
+| ADR-006 | Qwen roda em backend GPU remoto; infraestrutura desacoplada do local |
 
 Três eixos ortogonais que nunca devem se misturar:
 

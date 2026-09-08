@@ -594,12 +594,32 @@ def test_birefnet_license_verified():
 
 
 def test_unverified_models_still_refused():
-    for key in ("qwen_image_edit_2511", "real_esrgan_anime_6b"):
+    """Modelo sem licenca lida em fonte primaria continua barrado.
+
+    Qwen-Image-Edit-2511 saiu desta lista na FASE 3A: a licenca foi conferida
+    no endpoint /api/models (ver test_qwen_license_verified_in_phase_3a).
+    """
+    for key in ("real_esrgan_anime_6b",):
         ok, _ = config.commercially_usable(key)
         assert ok is False, f"{key} nao foi verificado, nao pode passar"
         ok, _ = config.technically_usable(key)
         assert ok is False, f"{key}: licenca nao lida bloqueia ate teste tecnico"
         assert config.commercial_status(key) == "unverified"
+
+
+def test_qwen_license_verified_in_phase_3a():
+    """FASE 3A: licenca do Qwen lida em fonte primaria, com revision fixada."""
+    key = "qwen_image_edit_2511"
+    entry = config.model(key)
+    assert entry["license"]["spdx"] == "Apache-2.0"
+    assert entry["revision"] == "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9"
+    assert entry["license"]["verified_on"] == "2026-09-08"
+    assert "api/models" in entry["license"]["source_url"]
+    assert config.commercial_status(key) == "approved"
+    assert config.technically_usable(key)[0] is True
+    # licenca verificada NAO significa pesos baixados
+    assert config.weights_available(key)[0] is False
+    assert config.executable(key)[0] is False
 
 
 def test_rejected_model_blocked_on_both_axes():

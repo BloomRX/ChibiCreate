@@ -24,20 +24,40 @@ models:
     display_name: Qwen-Image-Edit-2511
     repo: Qwen/Qwen-Image-Edit-2511
     source_url: https://huggingface.co/Qwen/Qwen-Image-Edit-2511
-    revision: null
+    revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    revision_date: "2025-12-23T13:13:52.000Z"
+    created_at: "2025-12-17T05:55:58.000Z"
     license:
       spdx: Apache-2.0
       commercial_use: allowed
-      verified: false            # [TEST REQUIRED] ler card oficial
-      verified_on: null
-      source_url: null
-      notes: >
-        Licenca Apache 2.0 relatada em fontes secundarias; ainda NAO conferida
-        no card oficial. Nao promover a verified sem essa checagem.
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://huggingface.co/api/models/Qwen/Qwen-Image-Edit-2511
+      evidence: >
+        Metadados oficiais do repositorio HuggingFace (endpoint /api/models) na
+        revisao 6f3ccc0b: cardData.license = "apache-2.0" e tag
+        "license:apache-2.0". gated=false, private=false. Nenhuma ressalva
+        encontrada no repositorio, diferente do ControlNet Union (ver ADR-004).
     weights:
       verified: false
-      files: []
+      # Repositorio diffusers multi-arquivo. sha256 por arquivo so pode ser
+      # calculado apos download real (nao feito: ver limitacoes de ambiente).
+      files:
+        - transformer/diffusion_pytorch_model-0000{1..5}-of-00005.safetensors
+        - text_encoder/model-0000{1..4}-of-00004.safetensors
+        - vae/diffusion_pytorch_model.safetensors
       sha256: null
+      total_storage_bytes: 57715696541    # ~57.7 GB, informado pelo HF
+      note: >
+        Pesos NAO baixados. Formato oficial e BF16 (20.43B params). Para uso
+        pratico em GPU menor existem quantizacoes GGUF de terceiros, que sao
+        OUTROS repositorios e exigem verificacao de licenca propria.
+    params: 20430401088
+    dtype: BF16
+    pipeline: QwenImageEditPlusPipeline
+    library: diffusers
     vram_notes: "Q4_0 ~11.9GB / Q4_K_M ~13.2GB / FP8 ~20.5GB / BF16 ~40.9GB"
     runs_on: cloud
     required_for_phase: 3

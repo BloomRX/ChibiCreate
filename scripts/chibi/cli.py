@@ -315,6 +315,134 @@ def cmd_selftest(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# fase 3A — comfyui e experimentos
+# ---------------------------------------------------------------------------
+
+def cmd_comfy(args: argparse.Namespace) -> int:
+    """`chibi comfy status|validate` — o backend esta utilizavel?"""
+    from . import comfy_client, experiment
+
+    env_name = getattr(args, "env", None) or config.get(
+        "runtime.default_environment", "local"
+    )
+
+    if args.subcommand == "status":
+        _header(f"ComfyUI — ambiente '{env_name}'")
+        try:
+            client = comfy_client.ComfyClient.from_environment(env_name)
+        except comfy_client.ComfyClientNotConfigured as exc:
+            _echo(f"  NAO CONFIGURADO: {exc}")
+            _echo("\n  Para apontar para um backend:")
+            _echo("    export CHIBI_COMFY_URL=http://<host>:<porta>")
+            _echo("    chibi comfy status --env cloud")
+            return EXIT_FAIL
+
+        _echo(f"  endereco : {client.base_url}")
+        info = client.server_info()
+        if not info.get("reachable"):
+            _echo(f"  estado   : INACESSIVEL\n  erro     : {info.get('error')}")
+            return EXIT_FAIL
+
+        _echo("  estado   : ONLINE")
+        _echo(f"  comfyui  : {info.get('comfyui_version')}")
+        _echo(f"  pytorch  : {info.get('pytorch_version')}")
+        for dev in info.get("devices", []):
+            total = dev.get("vram_total") or 0
+            free = dev.get("vram_free") or 0
+            _echo(f"  device   : {dev.get('name')} "
+                  f"({total / 1024**3:.1f} GB, livre {free / 1024**3:.1f} GB)")
+        return EXIT_OK
+
+    # validate
+    wf_name = getattr(args, "workflow", None) or experiment.DEFAULT_WORKFLOW
+    _header(f"Validando workflow: {wf_name}")
+    try:
+        workflow = experiment.load_workflow(wf_name)
+    except experiment.ExperimentError as exc:
+        _echo(f"  ERRO: {exc}")
+        return EXIT_FAIL
+
+    nodes = experiment.workflow_nodes(workflow)
+    classes = sorted({n["class_type"] for n in nodes.values()})
+    _echo(f"  JSON valido, {len(nodes)} nodes, {len(classes)} classes")
+    for c in classes:
+        _echo(f"    - {c}")
+
+    try:
+        client = comfy_client.ComfyClient.from_environment(env_name)
+        available = client.object_info()
+    except (comfy_client.ComfyClientNotConfigured, comfy_client.ComfyError) as exc:
+        _echo(f"\n  [TEST REQUIRED] Nao foi possivel conferir contra um servidor:")
+        _echo(f"    {exc}")
+        _echo("  A estrutura do JSON esta ok, mas os nomes de node NAO foram")
+        _echo("  verificados. Rode de novo com o ComfyUI acessivel.")
+        return EXIT_OK
+
+    missing = [c for c in classes if c not in available]
+    if missing:
+        _echo(f"\n  FALTAM {len(missing)} node(s) no servidor:")
+        for c in missing:
+            _echo(f"    - {c}")
+        _echo("\n  Instale os pacotes correspondentes ou ajuste o workflow.")
+        return EXIT_FAIL
+
+    _echo("\n  Todos os nodes existem no servidor.")
+    return EXIT_OK
+
+
+def cmd_experiment(args: argparse.Namespace) -> int:
+    """`chibi experiment qwen-edit` — execucao EXPERIMENTAL, nunca aprovada."""
+    from . import experiment
+
+    if args.subcommand == "compare":
+        from pathlib import Path
+
+        _header("Comparando execucoes")
+        try:
+            report = experiment.compare_runs(Path(args.run_a), Path(args.run_b))
+        except experiment.ExperimentError as exc:
+            _echo(f"  ERRO: {exc}")
+            return EXIT_FAIL
+        for key, value in report.items():
+            _echo(f"  {key:22}: {value}")
+        return EXIT_OK
+
+    _header(f"EXPERIMENTO — qwen-edit: {args.character}")
+    overrides: dict = {}
+    for field_ in ("seed", "steps", "cfg", "sampler", "scheduler", "denoise"):
+        if (value := getattr(args, field_, None)) is not None:
+            overrides[field_] = value
+
+    try:
+        result = experiment.run_qwen_edit(
+            args.character,
+            input_rel=args.input,
+            prompt=args.prompt,
+            environment_name=getattr(args, "env", None),
+            overrides=overrides,
+            dry_run=getattr(args, "dry_run", False),
+        )
+    except experiment.ExperimentError as exc:
+        _echo(f"  ERRO: {exc}")
+        return EXIT_FAIL
+    except Exception as exc:  # noqa: BLE001
+        _echo(f"  ERRO ({type(exc).__name__}): {exc}")
+        return EXIT_FAIL
+
+    _echo(f"  run      : {result.run_id}")
+    _echo(f"  diretorio: {result.run_dir.relative_to(paths.ROOT)}")
+    _echo(f"  seed     : {result.params.get('seed')}")
+    if result.output_path:
+        _echo(f"  output   : {result.output_path.name}")
+    _echo(f"  recipe   : {result.recipe_path.name}")
+    for w in result.warnings:
+        _echo(f"  aviso    : {w}")
+    _echo("\n  [HUMAN REVIEW REQUIRED] Resultado marcado EXPERIMENTAL.")
+    _echo("  Nao e Chibi Master e nao esta aprovado. Avaliacao artistica e humana.")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # stubs — fases 2..8
 # ---------------------------------------------------------------------------
 
@@ -434,6 +562,40 @@ def build_parser() -> argparse.ArgumentParser:
     p_f1.add_argument("--source", help="nome do arquivo em source/ a usar como principal")
     p_f1.add_argument("--force", action="store_true", help="sobrescrever reference/")
     p_f1.set_defaults(func=cmd_flow01)
+
+    # fase 3A — comfyui
+    p_comfy = sub.add_parser("comfy", help="backend ComfyUI")
+    comfy_sub = p_comfy.add_subparsers(dest="subcommand", required=True)
+    p_cs = comfy_sub.add_parser("status", help="o servidor esta acessivel?")
+    p_cs.add_argument("--env", help="ambiente (default: config/project.yaml)")
+    p_cs.set_defaults(func=cmd_comfy)
+    p_cv = comfy_sub.add_parser("validate", help="conferir nodes do workflow")
+    p_cv.add_argument("--env")
+    p_cv.add_argument("--workflow", help="ex: experimental/qwen_edit_minimal")
+    p_cv.set_defaults(func=cmd_comfy)
+
+    # fase 3A — experimentos
+    p_exp = sub.add_parser("experiment", help="execucoes experimentais")
+    exp_sub = p_exp.add_subparsers(dest="subcommand", required=True)
+    p_qe = exp_sub.add_parser("qwen-edit", help="edicao experimental via Qwen")
+    p_qe.add_argument("--character", required=True)
+    p_qe.add_argument("--input", default="reference/full_body.png")
+    p_qe.add_argument("--prompt", required=True,
+                      help="o que MUDAR. Nao descrever rosto/cabelo.")
+    p_qe.add_argument("--env")
+    p_qe.add_argument("--seed", type=int)
+    p_qe.add_argument("--steps", type=int)
+    p_qe.add_argument("--cfg", type=float)
+    p_qe.add_argument("--sampler")
+    p_qe.add_argument("--scheduler")
+    p_qe.add_argument("--denoise", type=float)
+    p_qe.add_argument("--dry-run", action="store_true", dest="dry_run",
+                      help="resolver workflow e recipe sem chamar o servidor")
+    p_qe.set_defaults(func=cmd_experiment)
+    p_cmp = exp_sub.add_parser("compare", help="comparar duas execucoes")
+    p_cmp.add_argument("run_a")
+    p_cmp.add_argument("run_b")
+    p_cmp.set_defaults(func=cmd_experiment)
 
     # stubs
     for name, func, helptext in (

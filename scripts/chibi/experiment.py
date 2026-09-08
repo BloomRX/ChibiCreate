@@ -1,0 +1,454 @@
+"""Execucoes experimentais contra o ComfyUI.  [FASE 3A]
+
+Um experimento NAO e um asset do projeto. Ele existe para responder
+perguntas tecnicas ("o motor executa?", "a config e reproduzivel?"), nao
+para produzir arte aprovada. Por isso:
+
+  - a saida vai para `experiments/`, nunca para `characters/<id>/chibi/`;
+  - o recipe nasce com `approval_status: "experimental"`;
+  - nada aqui promove um arquivo a Chibi Master. Isso e decisao humana.
+
+Estrutura por execucao:
+
+    experiments/qwen_edit_2511/run_001/
+        input.png
+        output.png
+        recipe.json
+        workflow.resolved.json
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from . import config, paths
+from .comfy_client import ComfyClient, ComfyError
+from .hashing import sha256_file
+
+EXPERIMENTS_DIRNAME = "experiments"
+DEFAULT_WORKFLOW = "experimental/qwen_edit_minimal"
+
+# Defaults do experimento minimo. Nao sao "os parametros certos" para arte —
+# sao um ponto de partida conservador para validar o motor.
+DEFAULT_PARAMS: dict[str, Any] = {
+    "seed": 42,
+    "steps": 20,
+    "cfg": 2.5,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "denoise": 1.0,
+    "negative_prompt": "",
+}
+
+
+class ExperimentError(RuntimeError):
+    pass
+
+
+@dataclass
+class ExperimentResult:
+    run_id: str
+    run_dir: Path
+    output_path: Path | None
+    recipe_path: Path
+    params: dict[str, Any] = field(default_factory=dict)
+    server: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+
+
+def experiments_root() -> Path:
+    return paths.ROOT / EXPERIMENTS_DIRNAME
+
+
+def workflow_path(name: str = DEFAULT_WORKFLOW, version: str = "v1") -> Path:
+    return paths.ROOT / "workflows" / name / f"{version}.json"
+
+
+def load_workflow(name: str = DEFAULT_WORKFLOW, version: str = "v1") -> dict:
+    path = workflow_path(name, version)
+    if not path.is_file():
+        raise ExperimentError(f"workflow nao encontrado: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ExperimentError(f"workflow invalido ({path.name}): {exc}") from exc
+    if not isinstance(data, dict):
+        raise ExperimentError(f"workflow deve ser objeto JSON: {path}")
+    return data
+
+
+def workflow_nodes(workflow: dict) -> dict[str, dict]:
+    """Nodes reais do grafo, ignorando as chaves de comentario (_comment)."""
+    return {
+        k: v for k, v in workflow.items()
+        if not k.startswith("_") and isinstance(v, dict) and "class_type" in v
+    }
+
+
+def next_run_id(model_dir: Path) -> str:
+    """run_001, run_002, ... Nunca reusa um id existente."""
+    used = 0
+    if model_dir.is_dir():
+        for child in model_dir.iterdir():
+            if m := re.fullmatch(r"run_(\d+)", child.name):
+                used = max(used, int(m.group(1)))
+    return f"run_{used + 1:03d}"
+
+
+def resolve_workflow(workflow: dict, values: dict[str, Any]) -> dict:
+    """Substitui os placeholders %%NOME%% preservando o tipo do valor.
+
+    Um placeholder sozinho no campo vira o valor com o tipo certo
+    (`"%%SEED%%"` -> `42`, inteiro). Placeholder no meio de texto vira string.
+    """
+    missing: set[str] = set()
+
+    def convert(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {k: convert(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [convert(v) for v in node]
+        if not isinstance(node, str):
+            return node
+
+        if m := re.fullmatch(r"%%([A-Z0-9_]+)%%", node):
+            key = m.group(1)
+            if key not in values:
+                missing.add(key)
+                return node
+            return values[key]
+
+        def sub(m: re.Match[str]) -> str:
+            key = m.group(1)
+            if key not in values:
+                missing.add(key)
+                return m.group(0)
+            return str(values[key])
+
+        return re.sub(r"%%([A-Z0-9_]+)%%", sub, node)
+
+    resolved = {k: convert(v) for k, v in workflow.items() if not k.startswith("_")}
+    if missing:
+        raise ExperimentError(
+            "placeholders sem valor no workflow: " + ", ".join(sorted(missing))
+        )
+    return resolved
+
+
+def _model_files(env_name: str) -> dict[str, str]:
+    """Nomes dos arquivos de modelo, como o SERVIDOR os enxerga."""
+    env = config.environment(env_name) or {}
+    models = (env.get("comfyui", {}) or {}).get("models", {}) or {}
+    missing = [k for k in ("unet", "clip", "vae") if not models.get(k)]
+    if missing:
+        raise ExperimentError(
+            f"ambiente '{env_name}': falta comfyui.models.{{{','.join(missing)}}} "
+            "em config/environments/. Sao os nomes dos arquivos no servidor "
+            "ComfyUI, nao caminhos locais."
+        )
+    return {
+        "unet": str(models["unet"]),
+        "clip": str(models["clip"]),
+        "vae": str(models["vae"]),
+        "weight_dtype": str(models.get("weight_dtype", "default")),
+    }
+
+
+def build_recipe(
+    *,
+    run_id: str,
+    model_key: str,
+    workflow_name: str,
+    workflow_version: str,
+    workflow_sha: str,
+    params: dict[str, Any],
+    input_path: Path,
+    output_path: Path | None,
+    server: dict[str, Any],
+    environment_name: str,
+    model_files: dict[str, str],
+) -> dict[str, Any]:
+    """Recipe da execucao experimental.
+
+    `approval_status` nasce "experimental" de proposito: nenhum caminho de
+    codigo aqui pode marcar um artefato como aprovado.
+    """
+    from .recipe import environment_block
+
+    entry = config.model(model_key) or {}
+    lic = entry.get("license", {}) or {}
+
+    env_block = environment_block()
+    env_block["environment_name"] = environment_name
+    env_block["comfyui_version"] = server.get("comfyui_version")
+    env_block["pytorch_version"] = server.get("pytorch_version")
+    env_block["server_os"] = server.get("os")
+    env_block["devices"] = server.get("devices", [])
+
+    return {
+        "kind": "experiment",
+        "run_id": run_id,
+        "approval_status": "experimental",
+        "approved_by": None,
+        "approved_at": None,
+        "note": (
+            "Execucao EXPERIMENTAL de validacao de motor. NAO e um asset "
+            "aprovado, NAO e Chibi Master. Aprovacao artistica e humana."
+        ),
+
+        "model": entry.get("repo", model_key),
+        "model_key": model_key,
+        "revision": entry.get("revision"),
+        "model_sha256": (entry.get("weights", {}) or {}).get("sha256"),
+        "model_files_on_server": model_files,
+        "license": lic.get("spdx"),
+        "license_verified": bool(lic.get("verified")),
+        "license_source": lic.get("source_url"),
+        "commercial_status": lic.get("commercial_status", "unverified"),
+
+        "workflow": f"{workflow_name}/{workflow_version}.json",
+        "workflow_sha256": workflow_sha,
+
+        "seed": params.get("seed"),
+        "prompt": params.get("prompt"),
+        "negative_prompt": params.get("negative_prompt"),
+        "parameters": {
+            "steps": params.get("steps"),
+            "cfg": params.get("cfg"),
+            "sampler": params.get("sampler"),
+            "scheduler": params.get("scheduler"),
+            "denoise": params.get("denoise"),
+            "width": params.get("width"),
+            "height": params.get("height"),
+        },
+
+        "quantization": model_files.get("weight_dtype"),
+        "dtype": model_files.get("weight_dtype"),
+        "offload": server.get("offload"),
+        "backend": "comfyui",
+        "device": server.get("devices", [{}])[0].get("name")
+        if server.get("devices") else None,
+
+        "input_sha256": sha256_file(input_path) if input_path.is_file() else None,
+        "input_filename": input_path.name,
+        "output_sha256": sha256_file(output_path)
+        if output_path and output_path.is_file() else None,
+        "output_filename": output_path.name if output_path else None,
+
+        "environment": env_block,
+        "timestamp": _now(),
+    }
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def run_qwen_edit(
+    character_id: str,
+    *,
+    input_rel: str = "reference/full_body.png",
+    prompt: str,
+    environment_name: str | None = None,
+    model_key: str = "qwen_image_edit_2511",
+    workflow_name: str = DEFAULT_WORKFLOW,
+    workflow_version: str = "v1",
+    overrides: dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> ExperimentResult:
+    """Executa um experimento de edicao. Com `dry_run`, nao chama o servidor.
+
+    O dry-run resolve o workflow, monta o recipe e escreve tudo em disco, para
+    que a estrutura seja testavel sem GPU.
+    """
+    cp = paths.CharacterPaths(character_id)
+    if not cp.root.is_dir():
+        raise ExperimentError(f"personagem '{character_id}' nao existe")
+
+    input_path = cp.root / input_rel
+    if not input_path.is_file():
+        raise ExperimentError(
+            f"input nao encontrado: {input_path}. Rode 'chibi flow01 "
+            f"{character_id}' antes."
+        )
+
+    ok, why = config.technically_usable(model_key)
+    if not ok:
+        raise ExperimentError(f"modelo '{model_key}' nao liberado: {why}")
+
+    environment_name = environment_name or config.get(
+        "runtime.default_environment", "local"
+    )
+
+    workflow = load_workflow(workflow_name, workflow_version)
+    wf_sha = sha256_file(workflow_path(workflow_name, workflow_version))
+
+    params: dict[str, Any] = dict(DEFAULT_PARAMS)
+    params.update({
+        "prompt": prompt,
+        "width": config.get("resolution.master.width", 1024),
+        "height": config.get("resolution.master.height", 1024),
+    })
+    params.update(overrides or {})
+
+    model_dir = experiments_root() / model_key
+    run_id = next_run_id(model_dir)
+    run_dir = model_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    warnings: list[str] = []
+    server: dict[str, Any] = {}
+    output_path: Path | None = None
+
+    # o input vai junto: o experimento tem que ser auditavel sozinho
+    local_input = run_dir / f"input{input_path.suffix}"
+    shutil.copy2(input_path, local_input)
+
+    model_files = _model_files(environment_name) if not dry_run else \
+        _model_files_or_placeholder(environment_name, warnings)
+
+    values = {
+        "UNET_NAME": model_files["unet"],
+        "CLIP_NAME": model_files["clip"],
+        "VAE_NAME": model_files["vae"],
+        "WEIGHT_DTYPE": model_files["weight_dtype"],
+        "INPUT_IMAGE": input_path.name,
+        "PROMPT": params["prompt"],
+        "NEGATIVE_PROMPT": params["negative_prompt"],
+        "SEED": params["seed"],
+        "STEPS": params["steps"],
+        "CFG": params["cfg"],
+        "SAMPLER": params["sampler"],
+        "SCHEDULER": params["scheduler"],
+        "DENOISE": params["denoise"],
+        "WIDTH": params["width"],
+        "HEIGHT": params["height"],
+        "OUTPUT_PREFIX": f"chibi_exp/{character_id}_{run_id}",
+    }
+    resolved = resolve_workflow(workflow, values)
+    (run_dir / "workflow.resolved.json").write_text(
+        json.dumps(resolved, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    if dry_run:
+        warnings.append(
+            "DRY RUN: nada foi enviado ao ComfyUI. Workflow resolvido e recipe "
+            "escritos; nenhuma imagem gerada."
+        )
+    else:
+        client = ComfyClient.from_environment(environment_name)
+        server = client.server_info()
+        if not server.get("reachable"):
+            raise ExperimentError(
+                f"ComfyUI inacessivel: {server.get('error')}"
+            )
+        uploaded = client.upload_image(input_path)
+        values["INPUT_IMAGE"] = uploaded
+        resolved = resolve_workflow(workflow, values)
+        (run_dir / "workflow.resolved.json").write_text(
+            json.dumps(resolved, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+        job = client.submit(resolved)
+        outputs = client.wait(job)
+        output_path = run_dir / "output.png"
+        client.download(outputs[0], output_path)
+        if len(outputs) > 1:
+            warnings.append(
+                f"{len(outputs)} imagens retornadas; salvei a primeira."
+            )
+
+    recipe = build_recipe(
+        run_id=run_id,
+        model_key=model_key,
+        workflow_name=workflow_name,
+        workflow_version=workflow_version,
+        workflow_sha=wf_sha,
+        params=params,
+        input_path=local_input,
+        output_path=output_path,
+        server=server,
+        environment_name=environment_name,
+        model_files=model_files,
+    )
+    if dry_run:
+        recipe["dry_run"] = True
+    recipe_path = run_dir / "recipe.json"
+    recipe_path.write_text(
+        json.dumps(recipe, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    return ExperimentResult(
+        run_id=run_id,
+        run_dir=run_dir,
+        output_path=output_path,
+        recipe_path=recipe_path,
+        params=params,
+        server=server,
+        warnings=warnings,
+    )
+
+
+def _model_files_or_placeholder(
+    env_name: str, warnings: list[str]
+) -> dict[str, str]:
+    try:
+        return _model_files(env_name)
+    except ExperimentError as exc:
+        warnings.append(f"{exc} (dry-run: usando placeholders)")
+        return {
+            "unet": "<NAO CONFIGURADO>",
+            "clip": "<NAO CONFIGURADO>",
+            "vae": "<NAO CONFIGURADO>",
+            "weight_dtype": "<NAO CONFIGURADO>",
+        }
+
+
+def compare_runs(run_a: Path, run_b: Path) -> dict[str, Any]:
+    """Compara duas execucoes. Responde a pergunta da secao 9 da spec.
+
+    NAO afirma determinismo: mede e reporta.
+    """
+    def load(run: Path) -> dict:
+        path = run / "recipe.json"
+        if not path.is_file():
+            raise ExperimentError(f"recipe ausente: {path}")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    ra, rb = load(run_a), load(run_b)
+
+    def same(field_: str) -> bool:
+        return ra.get(field_) == rb.get(field_)
+
+    identical_output = (
+        ra.get("output_sha256") is not None
+        and ra.get("output_sha256") == rb.get("output_sha256")
+    )
+    return {
+        "run_a": run_a.name,
+        "run_b": run_b.name,
+        "same_seed": same("seed"),
+        "same_prompt": same("prompt"),
+        "same_parameters": ra.get("parameters") == rb.get("parameters"),
+        "same_model_revision": same("revision"),
+        "same_workflow": same("workflow_sha256"),
+        "same_quantization": same("quantization"),
+        "same_input": same("input_sha256"),
+        "same_device": same("device"),
+        "output_a_sha256": ra.get("output_sha256"),
+        "output_b_sha256": rb.get("output_sha256"),
+        "identical_output": identical_output,
+        "verdict": (
+            "configuracao reproduzida e bytes identicos"
+            if identical_output else
+            "configuracao reproduzida, bytes DIFERENTES"
+            if ra.get("output_sha256") and rb.get("output_sha256") else
+            "sem output para comparar (dry-run?)"
+        ),
+    }
