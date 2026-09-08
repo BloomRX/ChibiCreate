@@ -54,6 +54,11 @@ models:
       commercial_use: allowed
       verified: true
       verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: pending_human_review
+      commercial_blocker: >
+        Ressalva do "All copyright reserved" no README (ver caveat). Uso
+        TECNICO liberado; uso COMERCIAL aguarda decisao humana registrada.
       source_url: https://huggingface.co/api/models/InstantX/Qwen-Image-ControlNet-Union
       evidence: >
         Metadados oficiais do repositorio HuggingFace (endpoint /api/models)
@@ -92,6 +97,8 @@ models:
       commercial_use: allowed
       verified: true
       verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
       source_url: https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE
       evidence: >
         Repositorio oficial GitHub ZhengPeng7/BiRefNet contem arquivo LICENSE

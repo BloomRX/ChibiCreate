@@ -24,10 +24,29 @@ Este arquivo é uma ferramenta de **engenharia e rastreabilidade**, não um pare
 
 `config/models.lock.yaml` (schema v2) separa duas coisas que costumam ser confundidas:
 
-- **`license.verified`** — a licença foi lida em **fonte primária** (arquivo `LICENSE` do repositório oficial ou endpoint `/api/models/<id>` do Hugging Face), com `source_url`, `verified_on` e `revision` fixada registrados. É uma verificação *documental*.
+- **`license.technical_status`** — a licença foi lida em **fonte primária** (arquivo `LICENSE` do repositório oficial ou endpoint `/api/models/<id>` do Hugging Face), com `source_url`, `verified_on` e `revision` fixada registrados. É uma verificação *documental*.
 - **`weights.verified`** — o arquivo de pesos foi **baixado** e o `sha256` conferido. É uma verificação *material*.
 
 Um modelo só é **executável** quando os dois são verdadeiros. Hoje **nenhum peso foi baixado** — o agente não baixa checkpoints (ver `AGENTS.md`). Portanto nenhum modelo é executável, mesmo os de licença já verificada.
+
+### Terceiro eixo: uso técnico × uso comercial (ADR-004)
+
+Ler a licença não é o mesmo que aprová-la para produção. Quando a fonte
+primária é ambígua, o estado fica explícito:
+
+| Campo | Valores | Bloqueia o quê |
+|---|---|---|
+| `technical_status` | `verified` / ausente | experimentação técnica |
+| `commercial_status` | `approved` · `pending_human_review` · `unverified` | uso em produção |
+
+Uma ressalva jurídica pendente **não bloqueia teste técnico** — a engenharia
+não fica parada esperando o jurídico. Mas `commercially_usable()` continua
+recusando, e é ela a porta única para qualquer decisão de produção.
+
+`commercial_use: forbidden` bloqueia os **dois** eixos: licença
+explicitamente não-comercial não se testa "só para experimentar".
+
+Só um humano muda `pending_human_review` para `approved`.
 
 Consulte o estado atual com `chibi models`.
 
@@ -35,16 +54,16 @@ Consulte o estado atual com `chibi models`.
 
 ## Licenças verificadas em fonte primária
 
-| Modelo | Papel | Licença | Fonte consultada | Revisão fixada | Verificado em |
+| Modelo | Papel | Licença | Uso comercial | Fonte consultada | Revisão fixada |
 |---|---|---|---|---|---|
-| Qwen-Image-ControlNet-Union (InstantX) | controle de pose | **Apache-2.0** | [`/api/models/InstantX/Qwen-Image-ControlNet-Union`](https://huggingface.co/api/models/InstantX/Qwen-Image-ControlNet-Union) (`license` + `cardData.license`) | `b13036f066d6dee7c20513e263d3d673055e9de8` | 2026-09-08 |
-| BiRefNet | remoção de fundo | **MIT** | [`LICENSE` no GitHub oficial](https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE) + `cardData.license` no HF | `e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4` (pesos) · `ebcc0bc8` (código) | 2026-09-08 |
+| Qwen-Image-ControlNet-Union (InstantX) | controle de pose | **Apache-2.0** | ⚠️ **pending_human_review** | [`/api/models/…`](https://huggingface.co/api/models/InstantX/Qwen-Image-ControlNet-Union) (`license` + `cardData.license`) | `b13036f066d6dee7c20513e263d3d673055e9de8` |
+| BiRefNet | remoção de fundo | **MIT** | ✅ approved | [`LICENSE` no GitHub oficial](https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE) + `cardData.license` no HF | `e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4` |
 
 ### ⚠️ Ressalva registrada — ControlNet Union
 
 O README do mesmo repositório traz, na seção *Acknowledgements*, a frase **"All copyright reserved"**, que aparenta conflitar com a tag `apache-2.0` declarada nos metadados estruturados e no `cardData`.
 
-**Posição adotada:** prevalece a licença declarada formalmente nos metadados do repositório (Apache-2.0), que é o campo com significado jurídico no Hugging Face. A ressalva fica registrada em `models.lock.yaml` (campo `caveat`) e é impressa por `chibi models`.
+**Posição adotada:** para fins de *registro documental* prevalece a licença declarada formalmente nos metadados do repositório (Apache-2.0), que é o campo com significado jurídico no Hugging Face. Mas o **uso comercial fica em `pending_human_review`** (ADR-004): teste técnico liberado, produção bloqueada até decisão humana. A ressalva é impressa por `chibi models`.
 
 **[HUMAN REVIEW REQUIRED]** Antes de uso comercial em produção, um humano deve decidir se essa ambiguidade é aceitável ou se convém: (a) pedir esclarecimento ao mantenedor, ou (b) trocar por ControlNet SDXL (ecossistema OpenRAIL++), ou (c) aplicar poses por rig em vez de por modelo (o que o ADR-002 já favorece).
 

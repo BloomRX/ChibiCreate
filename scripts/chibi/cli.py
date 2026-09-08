@@ -195,20 +195,28 @@ def cmd_models(args: argparse.Namespace) -> int:
     _echo(f"  ultima revisao: {lock.get('last_reviewed', '?')}\n")
 
     for key, entry in lock.get("models", {}).items():
-        lic_ok, lic_why = config.commercially_usable(key)
+        com_ok, com_why = config.commercially_usable(key)
+        tec_ok, tec_why = config.technically_usable(key)
+        status = config.commercial_status(key)
         w_ok, w_why = config.weights_available(key)
         lic = entry.get("license", {}) or {}
 
         _echo(f"  {entry.get('display_name')}")
         _echo(f"     papel        : {entry.get('role')} | roda em: {entry.get('runs_on')}"
               f" | fase: {entry.get('required_for_phase', '?')}")
-        _echo(f"     licenca      : {lic.get('spdx') or 'DESCONHECIDA'}"
-              f"  [{'VERIFICADA' if lic_ok else 'nao verificada'}]")
-        if not lic_ok:
-            _echo(f"                    -> {lic_why}")
-        else:
-            _echo(f"                    -> {lic_why}")
-            _echo(f"                    fonte: {lic.get('source_url')}")
+        _echo(f"     licenca      : {lic.get('spdx') or 'DESCONHECIDA'}")
+        _echo(f"     uso tecnico  : {'LIBERADO' if tec_ok else 'BLOQUEADO'} — {tec_why}")
+
+        rotulo = {
+            "approved": "APROVADO",
+            "pending_human_review": "PENDENTE DE REVISAO HUMANA",
+            "unverified": "NAO VERIFICADO",
+        }.get(status, status.upper())
+        _echo(f"     uso comercial: {rotulo}")
+        if not com_ok:
+            _echo(f"                    -> {com_why}")
+        if lic.get("source_url"):
+            _echo(f"     fonte licenca: {lic.get('source_url')}")
         if rev := entry.get("revision"):
             _echo(f"     revision     : {rev}")
         _echo(f"     pesos        : {'baixados/conferidos' if w_ok else w_why}")

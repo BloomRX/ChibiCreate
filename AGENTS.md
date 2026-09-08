@@ -266,7 +266,8 @@ Antes de implementar:
 | Fase | Escopo | Status |
 |---|---|---|
 | 1 | Fundação: estrutura, config, recipes, gates, CLI | ✅ concluída |
-| 2 | FLOW 01 — character reference | ✅ concluída |
+| 2 | FLOW 01 — character reference | ✅ implementada e testada |
+| **GATE 2.1** | **Validar FLOW 01 com arte-fonte REAL** | 🚧 **bloqueado — aguarda arte** |
 | 3 | FLOW 02 — chibi master | ⛔ não iniciada |
 | 4 | Aprovação humana | ⛔ não iniciada |
 | 5 | FLOW 03 — poses | ⛔ não iniciada |
@@ -275,6 +276,19 @@ Antes de implementar:
 | 8 | Godot + benchmark | ⛔ não iniciada |
 
 > Manter esta tabela atualizada é responsabilidade do agente ao fim de cada fase.
+
+### GATE 2.1 — o que falta
+
+A Fase 2 só é marcada **COMPLETE** depois que o FLOW 01 rodar sobre a arte-fonte
+**real** da personagem mais difícil e a `sheet.png` for aprovada visualmente por
+um humano. Fixture sintética **não** conta como validação.
+
+Checklist visual (a arte real precisa demonstrar): full body preservado, face,
+hair, outfit, weapon quando visível, acessórios relevantes, nenhum recorte
+involuntário, alpha correto, thumbs em proporções adequadas.
+
+**Regra:** só alterar `DEFAULT_REGIONS` se a arte real demonstrar uma **falha
+geométrica**. Nunca por preferência estética. Qualquer alteração vira ADR.
 
 ---
 
@@ -287,6 +301,7 @@ Não reabrir sem discussão explícita. Ver `docs/decisions/`.
 | ADR-001 | Qwen-Image-Edit-2511 como motor de identidade (multi-referência) |
 | ADR-002 | Animação por rig cutout — **não** geração de frames por IA |
 | ADR-003 | ComfyUI é executor; **Git é a fonte da verdade** |
+| ADR-004 | Licença tem dois eixos: `technical_status` × `commercial_status` |
 
 Três eixos ortogonais que nunca devem se misturar:
 

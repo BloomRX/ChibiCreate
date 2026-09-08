@@ -425,17 +425,41 @@ def test_weapon_has_no_heuristic():
 
 # --- licenciamento (correcoes administrativas) ------------------------------
 
-def test_controlnet_license_verified():
-    ok, why = config.commercially_usable("qwen_image_controlnet_union")
-    assert ok is True, why
-    entry = config.model("qwen_image_controlnet_union")
+def test_controlnet_license_read_but_commercially_pending():
+    """ADR-004: licenca lida em fonte primaria, uso comercial pendente.
+
+    A ressalva do "All copyright reserved" nao bloqueia teste tecnico,
+    mas bloqueia producao.
+    """
+    key = "qwen_image_controlnet_union"
+    entry = config.model(key)
     assert entry["license"]["spdx"] == "Apache-2.0"
     assert entry["revision"] == "b13036f066d6dee7c20513e263d3d673055e9de8"
     assert entry["license"]["verified_on"] == "2026-09-08"
-    assert config.license_caveat("qwen_image_controlnet_union")  # conflito registrado
+    assert config.license_caveat(key)  # conflito registrado
+
+    assert config.commercial_status(key) == "pending_human_review"
+
+    ok, _ = config.technically_usable(key)
+    assert ok is True, "ressalva juridica nao pode bloquear teste tecnico"
+
+    ok, why = config.commercially_usable(key)
+    assert ok is False, "ressalva pendente nao pode liberar uso comercial"
+    assert "pending_human_review" in why
+
+
+def test_agent_cannot_clear_commercial_pending():
+    """So um humano muda pending_human_review para approved."""
+    key = "qwen_image_controlnet_union"
+    lic = config.model(key)["license"]
+    assert lic["commercial_status"] == "pending_human_review"
+    assert lic.get("commercial_blocker", "").strip(), "pendencia exige motivo escrito"
 
 
 def test_birefnet_license_verified():
+    assert config.commercial_status("birefnet") == "approved"
+    ok, _ = config.technically_usable("birefnet")
+    assert ok is True
     ok, why = config.commercially_usable("birefnet")
     assert ok is True, why
     entry = config.model("birefnet")
@@ -448,6 +472,16 @@ def test_unverified_models_still_refused():
     for key in ("qwen_image_edit_2511", "real_esrgan_anime_6b"):
         ok, _ = config.commercially_usable(key)
         assert ok is False, f"{key} nao foi verificado, nao pode passar"
+        ok, _ = config.technically_usable(key)
+        assert ok is False, f"{key}: licenca nao lida bloqueia ate teste tecnico"
+        assert config.commercial_status(key) == "unverified"
+
+
+def test_rejected_model_blocked_on_both_axes():
+    """Licenca nao-comercial nao se testa 'so para experimentar'."""
+    for key in ("bria_rmbg_2_0", "seedvr2"):
+        assert config.technically_usable(key)[0] is False
+        assert config.commercially_usable(key)[0] is False
 
 
 def test_no_weights_are_downloaded():

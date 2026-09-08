@@ -99,7 +99,49 @@ def commercially_usable(key: str) -> tuple[bool, str]:
         return False, "license.source_url ausente (fonte primaria obrigatoria)"
     if not entry.get("revision"):
         return False, "revision nao registrada"
+
+    # Licenca lida, mas com ressalva pendente de decisao humana. Nao libera
+    # uso COMERCIAL. Nao impede uso TECNICO — ver `technically_usable()`.
+    status = lic.get("commercial_status", "approved")
+    if status != "approved":
+        blocker = (lic.get("commercial_blocker") or "").strip()
+        return False, f"commercial_status={status}" + (f": {blocker}" if blocker else "")
+
     return True, f"{lic.get('spdx')} (conferido em {lic['verified_on']})"
+
+
+def technically_usable(key: str) -> tuple[bool, str]:
+    """A licenca foi lida em fonte primaria e permite experimentacao tecnica?
+
+    Diferente de `commercially_usable()`: uma ressalva juridica pendente de
+    decisao humana (commercial_status != approved) NAO bloqueia teste tecnico,
+    conforme instrucao do usuario no GATE 2.1. O que bloqueia e licenca
+    nao lida, modelo rejeitado ou proibicao explicita de uso comercial.
+    """
+    lock = models_lock()
+    if key in lock.get("rejected", {}):
+        return False, f"modelo REJEITADO: {lock['rejected'][key].get('reason', '')}"
+    entry = lock.get("models", {}).get(key)
+    if entry is None:
+        return False, "nao registrado em models.lock.yaml"
+
+    lic = entry.get("license", {}) or {}
+    if lic.get("technical_status") != "verified" and not lic.get("verified"):
+        return False, "licenca NAO conferida em fonte primaria"
+    if lic.get("commercial_use") == "forbidden":
+        return False, "licenca proibe uso comercial (nao usar nem em teste)"
+    return True, f"{lic.get('spdx')} — uso tecnico liberado"
+
+
+def commercial_status(key: str) -> str:
+    """`approved`, `pending_human_review` ou `unverified`."""
+    entry = model(key)
+    if entry is None:
+        return "unverified"
+    lic = entry.get("license", {}) or {}
+    if not lic.get("verified"):
+        return "unverified"
+    return lic.get("commercial_status", "approved")
 
 
 def weights_available(key: str) -> tuple[bool, str]:
