@@ -1,101 +1,109 @@
 {
-  "_comment": "Inventario das referencias de estilo. Registra o que e verificavel SEM abrir a imagem: nome, categoria, sha256 e tamanho, lidos dos ponteiros Git LFS. NAO contem analise visual: o agente nao conseguiu baixar os arquivos (ver visual_analysis).",
+  "_comment": "Inventario das referencias de estilo. Registra o que e verificavel SEM abrir a imagem: nome, categoria, sha256 e tamanho, lidos dos ponteiros Git LFS. NAO contem analise visual.",
   "generated_on": "2026-09-08",
-  "commit": "3f138a5",
+  "commit": "a980798",
+  "note": "Commit a980798 'Chibi Ref Update' substituiu os 12 arquivos por versoes menores (3.0 MB no total, contra ~6.3 MB antes). Os sha256 mudaram; o inventario abaixo reflete os arquivos ATUAIS.",
   "visual_analysis": {
     "performed": false,
     "reason": "LFS_CDN_BLOCKED",
-    "detail": "Os arquivos estao em Git LFS. git-lfs nao esta instalado no ambiente do agente e github-cloud.githubusercontent.com esta bloqueado por egress. Testados e falhos: LFS batch API (URLs assinadas obtidas, download falhou no TLS), tarball via codeload (retorna ponteiros), github.com/raw (bloqueado), API contents com Accept:raw (retorna ponteiro).",
-    "unblocks_with": "git lfs pull numa maquina com acesso, ou anexar as imagens na conversa"
+    "detail": "Arquivos em Git LFS. git-lfs nao instalado e github-cloud.githubusercontent.com bloqueado por egress. Retestado apos o commit a980798: as URLs assinadas sao obtidas (12/12) mas o download falha no TLS. O tamanho menor nao alterou o resultado — o bloqueio e de rede, nao de volume.",
+    "paths_tried": [
+      "lfs-batch-api",
+      "codeload-tarball",
+      "github-raw",
+      "api-contents-raw"
+    ],
+    "unblocks_with": "anexar as imagens na conversa, ou git lfs pull numa maquina com acesso"
   },
   "files": [
     {
       "file": "Chibi1.png",
       "category": "chibi",
-      "sha256": "37640177a19409aa1541f03ce9a3cfd07634332b87e15e79e3cf767957eb9e07",
-      "size_bytes": 149611,
+      "sha256": "dd7b3519c5414ac807414ba362e246113e19ca90e9ac186c76b0050ebe825b42",
+      "size_bytes": 43501,
       "storage": "git-lfs"
     },
     {
       "file": "Chibi2.png",
       "category": "chibi",
-      "sha256": "e5d43305bec3bb6d29880ad8a3af9d20dc8dc89f2262bbf98157a64aa2b89ed5",
-      "size_bytes": 268858,
+      "sha256": "3504c1c2c3a8483807f72c315219b8c480758cfc290d917ac9f8b1c17e5ca928",
+      "size_bytes": 73616,
       "storage": "git-lfs"
     },
     {
       "file": "chibi3.jpg",
       "category": "chibi",
-      "sha256": "2d0f8c8f3fb72988ee63ce944f7aaef9cc03b70999f5a2c52da9a6e0f13e6fa9",
-      "size_bytes": 36116,
+      "sha256": "3ca060ec89899929300b5b39628065afdb194939694af10644a49134b5968049",
+      "size_bytes": 19981,
       "storage": "git-lfs"
     },
     {
       "file": "chibi4.jpg",
       "category": "chibi",
-      "sha256": "19ab3214708ec5d160c3ff6e506dd7e1d69da291b18d71a5e4f180267b09e2d1",
-      "size_bytes": 31865,
+      "sha256": "315fb39d87f7676394a557630afe93a0c8ff7dba20d015dc0a5dfad7f393035d",
+      "size_bytes": 17728,
       "storage": "git-lfs"
     },
     {
       "file": "chibi5.jpg",
       "category": "chibi",
-      "sha256": "52c673b2b0a4d24e41173ce3957b4eed679aba4caf9a84eb9ded5474dea5ae3c",
-      "size_bytes": 34437,
+      "sha256": "4185bed0c690eeb99186f97f9eacfeb989b00f53f7b277c235bbdf9a4284538b",
+      "size_bytes": 19160,
       "storage": "git-lfs"
     },
     {
       "file": "chibi6.jpg",
       "category": "chibi",
-      "sha256": "b527c2c50ca672d7081350c3ae3b02a4f686e4ea082d8798328c281aae5c2a96",
-      "size_bytes": 17753,
+      "sha256": "ef51dfd326a71294cb93d64f7d6ecfd74972a19e471efa98a221aa35e2faf2cc",
+      "size_bytes": 9862,
       "storage": "git-lfs"
     },
     {
       "file": "splash1.png",
       "category": "splash",
-      "sha256": "4eaabf66ab1f2e381bf6ef7ab690fff68fc31b6ea7bc4d7b99d7a6a05967fea3",
-      "size_bytes": 1364204,
+      "sha256": "53e8ef4bba908ba9b612cf6c8abd2548f601a20ecc05a33165cf4857e690ef12",
+      "size_bytes": 508427,
       "storage": "git-lfs"
     },
     {
       "file": "splash2.jpg",
       "category": "splash",
-      "sha256": "f6702c4405ac86a648464f0a98e3f64382cfe10f3da483d011d292feb5e08886",
-      "size_bytes": 340203,
+      "sha256": "d3e8c988d8034bbe9f380b35db2720bccb7660fcf9bf52b670d255a63eef68a2",
+      "size_bytes": 163827,
       "storage": "git-lfs"
     },
     {
       "file": "splash3.png",
       "category": "splash",
-      "sha256": "d74fefd07df0308e5d723e3838379e7a34fa276cae5050a3b6e27334ad31ded6",
-      "size_bytes": 1026940,
+      "sha256": "91edd5e3aeab5c73f9ef14d1d5d7c6dcafb05fa796ba9b09015caf1e12060356",
+      "size_bytes": 628407,
       "storage": "git-lfs"
     },
     {
       "file": "splash4.png",
       "category": "splash",
-      "sha256": "4ac716618798c728706b58ae35637d271757030bfec5fe2c57d3934f8df388cd",
-      "size_bytes": 1086838,
+      "sha256": "c3e62939c75687f6b12e77a2d166055a01fce5c43c603c281c5336879a42ad1a",
+      "size_bytes": 600701,
       "storage": "git-lfs"
     },
     {
       "file": "splash5.png",
       "category": "splash",
-      "sha256": "28d27cc37a93bf9a057e1c176dc380c62e371440b6b567dd3451fc7a002d477f",
-      "size_bytes": 1027418,
+      "sha256": "8b4193ab9d037df6b4f470d704768e86685f669bbb417c2daa244d5c58e5b215",
+      "size_bytes": 598210,
       "storage": "git-lfs"
     },
     {
       "file": "splash6.png",
       "category": "splash",
-      "sha256": "a74bc5daa9e09914232078b3ac9c48bb6a90e5169490186864aa0d03e6d8caf6",
-      "size_bytes": 936541,
+      "sha256": "a2855f00940291988e08bc041e6861e75e283a3d505858dbd50b4881a31bcf13",
+      "size_bytes": 436645,
       "storage": "git-lfs"
     }
   ],
   "counts": {
     "chibi": 6,
-    "splash": 6
+    "splash": 6,
+    "total_bytes": 3120065
   }
 }
