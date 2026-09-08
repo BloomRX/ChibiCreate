@@ -1057,7 +1057,105 @@ def test_cloud_config_has_no_local_machine_paths():
         assert bad not in text, f"path especifico da maquina: {bad}"
 
 
+# ---------------------------------------------------------------------------
+# FASE 3B = MODEL EVALUATION — candidato FLUX.2 klein 4B
+# ---------------------------------------------------------------------------
+
+
+def test_flux2_candidate_is_registered():
+    """O candidato existe e amarra model_key + workflow + ambiente."""
+    cand = experiment.MODEL_CANDIDATES["flux2-klein"]
+    assert cand["model_key"] == "flux2_klein_4b", cand
+    assert cand["workflow"] == "experimental/flux2_klein_edit", cand
+    # Qwen continua candidato — nao foi rejeitado.
+    assert "qwen-edit" in experiment.MODEL_CANDIDATES
+
+
+def test_flux2_license_verified_in_primary_source():
+    """4B e Apache-2.0. A 9B NAO e comercial e nao pode ser confundida."""
+    ok, why = config.commercially_usable("flux2_klein_4b")
+    assert ok, why
+    entry = config.model("flux2_klein_4b")
+    assert entry["license"]["spdx"] == "Apache-2.0"
+    assert entry["license"]["commercial_status"] == "approved"
+    assert entry["revision"] == "e7b7dc27f91deacad38e78976d1f2b499d76a294"
+    # A evidencia precisa registrar a distincao 4B x 9B.
+    ev = entry["license"]["evidence"]
+    assert "9B" in ev and "non-commercial" in ev, "distincao 4B/9B ausente"
+
+
+def test_flux2_env_overrides_cfg_to_one():
+    """cfg 2.5 (default do Qwen) lavaria a imagem no FLUX destilado.
+
+    O ambiente precisa sobrepor os defaults, senao a avaliacao do candidato
+    seria injusta por um parametro errado.
+    """
+    assert experiment.DEFAULT_PARAMS["cfg"] == 2.5, "default do Qwen mudou"
+    sampling = (config.environment("colab_flux2") or {}).get("sampling") or {}
+    assert sampling["cfg"] == 1.0, sampling
+    assert sampling["steps"] == 4, sampling
+
+
+def test_flux2_dry_run_uses_flux_parameters():
+    """O recipe do FLUX precisa sair com cfg 1.0 e 4 passos, nao com os do Qwen."""
+    import json
+    result = experiment.run_qwen_edit(
+        "waifu_001",
+        prompt="chibi",
+        environment_name="colab_flux2",
+        model_key="flux2_klein_4b",
+        workflow_name="experimental/flux2_klein_edit",
+        dry_run=True,
+        eval_mode=True,
+    )
+    recipe = json.loads((result.run_dir / "recipe.json").read_text())
+    params = recipe["parameters"]
+    assert params["cfg"] == 1.0, params
+    assert params["steps"] == 4, params
+    assert recipe["license"] == "Apache-2.0", recipe["license"]
+    # Vai para model_eval/, separado das execucoes avulsas.
+    assert "model_eval" in str(result.run_dir), result.run_dir
+    shutil.rmtree(result.run_dir.parent.parent, ignore_errors=True)
+
+
+def test_flux2_workflow_resolves_without_placeholders():
+    """Placeholder cru no grafo vira erro no servidor. Nenhum pode sobrar."""
+    import json
+    result = experiment.run_qwen_edit(
+        "waifu_001",
+        prompt="chibi",
+        environment_name="colab_flux2",
+        model_key="flux2_klein_4b",
+        workflow_name="experimental/flux2_klein_edit",
+        dry_run=True,
+        eval_mode=True,
+    )
+    raw = (result.run_dir / "workflow.resolved.json").read_text()
+    assert "%%" not in raw, "placeholder nao resolvido"
+    graph = json.loads(raw)
+    # ReferenceLatent e o mecanismo NATIVO de multi-referencia do FLUX.2.
+    classes = {n["class_type"] for k, n in graph.items() if not k.startswith("_")}
+    assert "ReferenceLatent" in classes, classes
+    assert "ConditioningZeroOut" in classes, classes
+    # Nada de TextEncodeQwenImageEditPlus: isso e do outro candidato.
+    assert "TextEncodeQwenImageEditPlus" not in classes, classes
+    shutil.rmtree(result.run_dir.parent.parent, ignore_errors=True)
+
+
+def test_flux2_env_has_no_secrets():
+    """Mesma regra da secao 11-B vale para o ambiente novo."""
+    import re
+
+    raw = (ROOT / "config" / "environments" / "colab_flux2.yaml").read_text()
+    assert re.search(r"base_url_env:\s*CHIBI_COMFY_URL", raw)
+    assert not re.search(r"https?://", raw), "URL literal no yaml"
+    for bad in ("/home/", "/content/", "token:", "password"):
+        assert bad not in raw, f"'{bad}' no yaml de ambiente"
+
+
+
 # --- runner -----------------------------------------------------------------
+
 
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())

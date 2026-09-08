@@ -447,7 +447,25 @@ def cmd_experiment(args: argparse.Namespace) -> int:
             _echo(f"  {key:22}: {value}")
         return EXIT_OK
 
-    _header(f"EXPERIMENTO — qwen-edit: {args.character}")
+    # `model-eval` amarra candidato -> model_key + workflow + ambiente, para
+    # nao depender de tres flags coerentes digitadas a mao.
+    eval_mode = args.subcommand == "model-eval"
+    if eval_mode:
+        candidate = experiment.MODEL_CANDIDATES.get(args.model)
+        if candidate is None:
+            _echo(f"  ERRO: candidato desconhecido '{args.model}'. "
+                  f"Conhecidos: {', '.join(experiment.MODEL_CANDIDATES)}")
+            return EXIT_FAIL
+        model_key = candidate["model_key"]
+        workflow_name = candidate["workflow"]
+        env_name = getattr(args, "env", None) or candidate["environment"]
+        _header(f"MODEL EVALUATION — {candidate['label']}: {args.character}")
+    else:
+        model_key = "qwen_image_edit_2511"
+        workflow_name = experiment.DEFAULT_WORKFLOW
+        env_name = getattr(args, "env", None)
+        _header(f"EXPERIMENTO — qwen-edit: {args.character}")
+
     overrides: dict = {}
     for field_ in ("seed", "steps", "cfg", "sampler", "scheduler", "denoise"):
         if (value := getattr(args, field_, None)) is not None:
@@ -458,9 +476,12 @@ def cmd_experiment(args: argparse.Namespace) -> int:
             args.character,
             input_rel=args.input,
             prompt=args.prompt,
-            environment_name=getattr(args, "env", None),
+            environment_name=env_name,
+            model_key=model_key,
+            workflow_name=workflow_name,
             overrides=overrides,
             dry_run=getattr(args, "dry_run", False),
+            eval_mode=eval_mode,
         )
     except experiment.ExperimentError as exc:
         _echo(f"  ERRO: {exc}")
@@ -559,6 +580,13 @@ def cmd_benchmark(a): return _not_implemented(
 # parser
 # ---------------------------------------------------------------------------
 
+def experiment_candidates() -> dict:
+    """Candidatos de modelo, importados tarde para o parser seguir barato."""
+    from .experiment import MODEL_CANDIDATES
+
+    return MODEL_CANDIDATES
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="chibi",
@@ -637,6 +665,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_qe.add_argument("--dry-run", action="store_true", dest="dry_run",
                       help="resolver workflow e recipe sem chamar o servidor")
     p_qe.set_defaults(func=cmd_experiment)
+
+    # FASE 3B = MODEL EVALUATION: mesmo experimento, candidatos diferentes.
+    p_me = exp_sub.add_parser(
+        "model-eval",
+        help="avaliar um candidato (mesmo input/prompt/seed para todos)")
+    p_me.add_argument("--model", required=True,
+                      choices=sorted(experiment_candidates()),
+                      help="candidato a avaliar")
+    p_me.add_argument("--character", required=True)
+    p_me.add_argument("--input", default="reference/full_body.png")
+    p_me.add_argument("--prompt", required=True,
+                      help="o que MUDAR. Nao descrever rosto/cabelo.")
+    p_me.add_argument("--env", help="sobrepoe o ambiente do candidato")
+    p_me.add_argument("--seed", type=int)
+    p_me.add_argument("--steps", type=int)
+    p_me.add_argument("--cfg", type=float)
+    p_me.add_argument("--sampler")
+    p_me.add_argument("--scheduler")
+    p_me.add_argument("--denoise", type=float)
+    p_me.add_argument("--dry-run", action="store_true", dest="dry_run")
+    p_me.set_defaults(func=cmd_experiment)
+
     p_cmp = exp_sub.add_parser("compare", help="comparar duas execucoes")
     p_cmp.add_argument("run_a")
     p_cmp.add_argument("run_b")

@@ -59,6 +59,45 @@ Consulte o estado atual com `chibi models`.
 | Qwen-Image-ControlNet-Union (InstantX) | controle de pose | **Apache-2.0** | ⚠️ **pending_human_review** | [`/api/models/…`](https://huggingface.co/api/models/InstantX/Qwen-Image-ControlNet-Union) (`license` + `cardData.license`) | `b13036f066d6dee7c20513e263d3d673055e9de8` |
 | BiRefNet | remoção de fundo | **MIT** | ✅ approved | [`LICENSE` no GitHub oficial](https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE) + `cardData.license` no HF | `e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4` |
 
+### ✅ FLUX.2 [klein] 4B — Apache-2.0 (verificado 2026-09-08)
+
+**Candidato experimental** para Chibi Master, adicionado na FASE 3B
+(MODEL EVALUATION).
+
+| Campo | Valor |
+|---|---|
+| Repositório | `black-forest-labs/FLUX.2-klein-4B` |
+| Revision | `e7b7dc27f91deacad38e78976d1f2b499d76a294` |
+| Licença | Apache-2.0 |
+| Verificado em | 2026-09-08 |
+| Fonte primária | `LICENSE.md` do repositório + model card |
+
+Duas fontes primárias conferidas: o `LICENSE.md` contém o texto integral da
+Apache License 2.0, e o card afirma *"Open weights available for commercial
+use under the Apache 2.0 license"*.
+
+> #### ⚠️ 4B é comercial. 9B NÃO é.
+>
+> A própria Black Forest Labs escreve no card: *"the release of the open-weight
+> FLUX.2 [klein] 4B models under an Apache 2.0 license and the release of the
+> FLUX.2 [klein] 9B models under a **non-commercial** license"*.
+>
+> **Somente a variante 4B pode ser usada neste projeto.** Baixar "FLUX.2 klein"
+> sem conferir o tamanho é um erro de conformidade, não de configuração.
+
+O card lista restrições de uso (conteúdo ilegal, CSAM, NCII, assédio,
+desinformação) e declara explicitamente que nada nele restringe ou modifica a
+licença. São limites de conduta, não restrição comercial.
+
+Arquivos para ComfyUI vêm de `Comfy-Org/vae-text-encorder-for-flux-klein-4b`
+(rev `5f526678`, Apache-2.0) — redistribuição oficial, com SHA256 registrados
+em `models.lock.yaml`.
+
+> **Atenção ao nome:** usar `flux-2-klein-4b.safetensors` (destilado), não
+> `flux-2-klein-base-4b.safetensors`. Mesmo tamanho, modelos diferentes.
+
+---
+
 ### ⚠️ Ressalva registrada — ControlNet Union
 
 O README do mesmo repositório traz, na seção *Acknowledgements*, a frase **"All copyright reserved"**, que aparenta conflitar com a tag `apache-2.0` declarada nos metadados estruturados e no `cardData`.

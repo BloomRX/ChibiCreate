@@ -273,7 +273,7 @@ Antes de implementar:
 | 2 | FLOW 01 — character reference | ✅ implementada e testada |
 | **GATE 2.1** | **Validar FLOW 01 com arte real (`waifu_001`)** | ✅ executado — aguarda revisão humana do sheet |
 | **3A** | **Infraestrutura ComfyUI + validação do Qwen** | 🟡 código pronto e testado — execução real bloqueada por GPU |
-| **3B** | **Execução real em GPU** | ⛔ **BLOCKED** — blocker único: `NO REAL GPU ENDPOINT` (`docs/fase-3b-BLOCKED.md`) |
+| **3B** | **MODEL EVALUATION** — comparar candidatos a Chibi Master | ⛔ **BLOCKED** — blocker único: `NO REAL GPU ENDPOINT` (`docs/fase-3b-BLOCKED.md`) |
 | **3B.1** | **Remote GPU readiness** (preflight, model discovery, segredos) | ✅ pronto — basta `CHIBI_COMFY_URL` |
 | 3 | FLOW 02 — chibi master | ⛔ não iniciada |
 | 4 | Aprovação humana | ⛔ não iniciada |
@@ -283,6 +283,35 @@ Antes de implementar:
 | 8 | Godot + benchmark | ⛔ não iniciada |
 
 > Manter esta tabela atualizada é responsabilidade do agente ao fim de cada fase.
+
+### FASE 3B = MODEL EVALUATION
+
+A fase **não** é "Qwen ou nada". O objetivo é descobrir qual modelo faz
+`source → chibi master` melhor, considerando identidade, qualidade,
+consistência, multi-reference, VRAM, custo, integração, licença e escala.
+
+| Candidato | Status | Ambiente | Workflow |
+|---|---|---|---|
+| Qwen-Image-Edit-2511 | `approved candidate` | `cloud` | `experimental/qwen_edit_minimal` |
+| FLUX.2 [klein] 4B | `experimental candidate` | `colab_flux2` | `experimental/flux2_klein_edit` |
+
+Nenhum foi rejeitado. **O vencedor é decisão humana**, após revisão visual —
+o agente não pontua identidade nem escolhe arte.
+
+Todos os candidatos rodam o **mesmo** experimento: mesmo input
+(`reference/full_body.png`), mesmo prompt, seed 42, batch 1. Saída em
+`experiments/model_eval/<model_key>/run_00N/`.
+
+```bash
+chibi experiment model-eval --model flux2-klein --character waifu_001 --seed 42 --prompt "..."
+```
+
+**Parâmetros por modelo, nunca copiados entre si.** Modelo destilado (klein)
+usa `cfg 1.0` e 4 passos; o Qwen usa `cfg 2.5` e 20. Aplicar o cfg errado lava
+a imagem e produz avaliação injusta. Isso mora em `sampling:` no YAML do
+ambiente, não no código.
+
+**FLUX.2 klein: só a variante 4B.** A 9B é não-comercial (confirmado pela BFL).
 
 ### FASE 3B — estado travado
 

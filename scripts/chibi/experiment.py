@@ -33,6 +33,30 @@ from .hashing import sha256_file
 EXPERIMENTS_DIRNAME = "experiments"
 DEFAULT_WORKFLOW = "experimental/qwen_edit_minimal"
 
+# FASE 3B = MODEL EVALUATION. Candidatos avaliados no MESMO experimento
+# padronizado (mesmo input, prompt, seed). Nenhum e "o vencedor" — a escolha
+# e humana, apos revisao visual.
+#
+# Cada entrada amarra model_key + workflow + ambiente, para que trocar de
+# candidato nao exija lembrar tres flags coerentes entre si.
+MODEL_CANDIDATES: dict[str, dict[str, str]] = {
+    "qwen-edit": {
+        "model_key": "qwen_image_edit_2511",
+        "workflow": "experimental/qwen_edit_minimal",
+        "environment": "cloud",
+        "label": "Qwen-Image-Edit-2511",
+    },
+    "flux2-klein": {
+        "model_key": "flux2_klein_4b",
+        "workflow": "experimental/flux2_klein_edit",
+        "environment": "colab_flux2",
+        "label": "FLUX.2 [klein] 4B",
+    },
+}
+
+# Subdiretorio da avaliacao comparativa: experiments/model_eval/<model_key>/
+MODEL_EVAL_DIRNAME = "model_eval"
+
 # Defaults do experimento minimo. Nao sao "os parametros certos" para arte —
 # sao um ponto de partida conservador para validar o motor.
 DEFAULT_PARAMS: dict[str, Any] = {
@@ -322,6 +346,7 @@ def run_qwen_edit(
     workflow_version: str = "v1",
     overrides: dict[str, Any] | None = None,
     dry_run: bool = False,
+    eval_mode: bool = False,
 ) -> ExperimentResult:
     """Executa um experimento de edicao. Com `dry_run`, nao chama o servidor.
 
@@ -351,6 +376,17 @@ def run_qwen_edit(
     wf_sha = sha256_file(workflow_path(workflow_name, workflow_version))
 
     params: dict[str, Any] = dict(DEFAULT_PARAMS)
+
+    # O ambiente pode sobrepor os defaults de sampling. Necessario porque
+    # modelos destilados exigem parametros proprios: o FLUX.2 klein roda com
+    # cfg 1.0 e 4 passos, enquanto o default (cfg 2.5, 20 passos) serve ao
+    # Qwen. Aplicar cfg 2.5 no FLUX produz imagem lavada. A precedencia e
+    # DEFAULT_PARAMS < ambiente < overrides da linha de comando.
+    env_cfg_early = config.environment(environment_name) or {}
+    for key, value in (env_cfg_early.get("sampling") or {}).items():
+        if key in DEFAULT_PARAMS:
+            params[key] = value
+
     params.update({
         "prompt": prompt,
         "width": config.get("resolution.master.width", 1024),
@@ -358,7 +394,10 @@ def run_qwen_edit(
     })
     params.update(overrides or {})
 
-    model_dir = experiments_root() / model_key
+    # Avaliacao comparativa vai para experiments/model_eval/<model_key>/,
+    # separada das execucoes avulsas.
+    base = experiments_root() / MODEL_EVAL_DIRNAME if eval_mode else experiments_root()
+    model_dir = base / model_key
     run_id = next_run_id(model_dir)
     run_dir = model_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
