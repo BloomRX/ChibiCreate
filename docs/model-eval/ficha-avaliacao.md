@@ -9,16 +9,23 @@ olhar os outputs.
 
 ---
 
-## Por que duas notas
+## Por que três notas
 
-Um modelo pode acertar um eixo e errar o outro:
+Um modelo pode acertar um eixo e errar outro:
 
 - **estilo bom, identidade ruim** → chibi bonito de *outra* personagem
 - **identidade boa, estilo ruim** → a personagem certa, fora da linguagem
   visual do jogo
+- **identidade boa, design ruim** → é ela, mas com outra roupa
 
-São falhas diferentes, com soluções diferentes. Uma nota só esconderia isso.
-Ver `docs/style-vs-identity.md`.
+O terceiro caso é o mais fácil de deixar passar: a personagem continua
+reconhecível, então "parece certo" — mas o design que foi desenhado e aprovado
+não sobreviveu. São falhas diferentes, com soluções diferentes. Uma nota só
+esconderia isso. Ver `docs/style-vs-identity.md`.
+
+> **Referência de estilo:** `styles/chibi/style.yaml` (`chibi_v0`). Os valores
+> ali vieram de análise visual externa e são `provisional_observation`, não
+> medidas. Use-os como guia de julgamento, não como régua.
 
 ## Identificação
 
@@ -52,6 +59,20 @@ descrever o que você viu, escreva a observação — ela vale mais.
 | RENDERING (lineart, shading, highlights) | | | |
 | SILHOUETTE LANGUAGE | | | |
 | **STYLE — impressão geral** | | | |
+
+### Conformidade com `chibi_v0`
+
+Marque o que o resultado cumpre (referência: `styles/chibi/style.yaml`):
+
+- [ ] cabeça grande (~2,5–3 cabeças de altura — aproximado, não régua)
+- [ ] torso curto, membros encurtados
+- [ ] mãos e pés pequenos
+- [ ] olhos grandes, íris legível
+- [ ] rosto simplificado (nariz mínimo, boca pequena)
+- [ ] lineart limpo
+- [ ] shading suave, highlights contidos
+- [ ] pouca textura / densidade de detalhe média
+- [ ] legível em escala pequena
 
 ### Game character vs generic chibi
 
@@ -108,15 +129,59 @@ Marque os que existem na arte-fonte e sobreviveram:
 
 ---
 
+## DESIGN PRESERVATION SCORE — HUMAN
+
+*O design original sobreviveu à simplificação?*
+
+**Não é a mesma pergunta que identidade.** Aqui não se pergunta "é ela?", e
+sim "é o design dela?". Uma personagem reconhecível com a roupa reinterpretada
+pontua bem em IDENTITY e mal aqui.
+
+Escala: 0 = redesenhado · 1 = pouco resta · 2 = parcial · 3 = reconhecível ·
+4 = bem preservado · 5 = fiel ao design.
+
+| Item | run_001 | run_002 | Observação |
+|---|---|---|---|
+| Forma principal | | | |
+| Cores | | | |
+| Cabelo (estrutura) | | | |
+| Roupa (peças e cortes) | | | |
+| Acessórios principais | | | |
+| Silhueta | | | |
+| **DESIGN PRESERVATION — geral** | | | |
+
+### Simplificado ou redesenhado?
+
+> **Simplificar é remover detalhe. Redesenhar é trocar o design.**
+> A primeira é o objetivo; a segunda é falha.
+
+- [ ] simplificado — detalhe removido, design intacto
+- [ ] parcialmente redesenhado (descrever o quê)
+- [ ] redesenhado — design diferente
+
+O que foi **removido** (aceitável: microdetalhe, dobras pequenas, textura,
+ornamento secundário): ___
+
+O que foi **trocado** (não aceitável): ___
+
+---
+
 ## OVERALL
 
 **Não é média aritmética.** É julgamento humano, e pode divergir das notas
 acima com justificativa.
 
-| | Valor |
+| Eixo | Nota |
 |---|---|
-| OVERALL | |
-| Justificativa | |
+| STYLE | |
+| IDENTITY | |
+| DESIGN PRESERVATION | |
+| **OVERALL** | |
+
+Justificativa do OVERALL: ___
+
+> Um eixo fraco pode condenar o conjunto mesmo com os outros dois altos —
+> por isso não há fórmula. Registre o raciocínio, não só o número.
 
 ---
 

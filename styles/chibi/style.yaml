@@ -74,100 +74,165 @@ proportions:
 # ===========================================================================
 #
 # Descreve o EIXO ESTILO: como uma personagem e desenhada em versao chibi.
-# NAO descreve identidade (cabelo, olhos, roupa, acessorios de uma personagem
-# especifica) — isso vive em characters/<id>/. Ver docs/style-vs-identity.md.
+# NAO descreve identidade (cabelo, olhos, roupa de uma personagem especifica)
+# — isso vive em characters/<id>/. Ver docs/style-vs-identity.md.
 #
-# ESTADO: esqueleto. TODOS os campos observacionais estao null porque
-# styles/chibi/references/ esta VAZIO. Preencher exige as imagens de
-# referencia: inventar proporcao ou shading sem evidencia visual seria criar
-# conteudo artistico, o que o agente nao pode fazer (AGENTS.md secao 2).
+# ---------------------------------------------------------------------------
+# PROVENIENCIA — ler antes de confiar em qualquer valor abaixo
+# ---------------------------------------------------------------------------
+# Os valores preenchidos NAO foram medidos por este agente. Vieram de uma
+# analise visual EXTERNA das referencias, feita fora deste workspace e
+# transmitida na conversa.
 #
-# Ao preencher: usar apenas o que for OBSERVAVEL. Quando a imagem nao permitir
-# medir, registrar intervalo aproximado ou manter null com [TEST REQUIRED].
-# Nao procurar uma "proporcao matematica universal" sem evidencia.
+# O agente nao teve acesso aos pixels: os arquivos estao em Git LFS e o CDN
+# esta bloqueado por egress (ver references/references.metadata.json).
+#
+# Consequencia pratica: sao OBSERVACOES QUALITATIVAS APROXIMADAS, nao medidas.
+# Nao converter em regra rigida, nao derivar numero exato, nao usar como
+# criterio automatico de aprovacao/reprovacao.
 
 style:
   id: chibi_v0
   status: experimental
-  source: user_reference_set
   spec_version: 0
-  references_present: true      # 12 arquivos recebidos (commit 3f138a5)
+
+  # --- PROVENIENCIA ------------------------------------------------------
+  source:
+    type: user_provided_style_references
+    analyzed_by: external_visual_review     # ChatGPT, fora deste workspace
+    status: provisional_observation
+    analyzed_by_external_visual_review: true
+    agent_pixel_access: false               # o agente NAO leu as imagens
+    agent_verified: false
+    note: >
+      Observacoes qualitativas derivadas visualmente. NAO sao medidas
+      matematicas e nao devem ser tratadas como regras universais. Onde o
+      valor e aproximado, o caracter aproximado esta preservado.
+
+  references_present: true
+
+  # --- ALVO --------------------------------------------------------------
+  # O alvo NAO e "generic anime chibi". E "stylized game/gacha chibi".
+  target:
+    label: stylized_game_gacha_chibi
+    not: generic_anime_chibi
+    traits:
+      - strong_chibi_proportions
+      - large_head
+      - reduced_simplified_body
+      - simplified_face
+      - large_eyes
+      - small_hands
+      - small_feet
+      - shortened_legs
+      - hair_simplified_identity_kept
+      - clothing_simplified_identity_kept
+      - characteristic_accessories_preserved
+      - clean_silhouette
+      - clean_2d_digital_rendering
+      - soft_shading
+      - game_character_detail_level
+      - readable_at_small_scale
 
   # --- A. PROPORCAO ------------------------------------------------------
-  # Registrar intervalo (ex: "1:2.5 a 1:3") quando um valor unico nao for
-  # defensavel a partir das imagens.
+  # Observacao aproximada. NAO virar regra do tipo "todo personagem tem
+  # exatamente X cabecas".
   proportions:
-    head_to_body_ratio: null      # [TEST REQUIRED]
-    head_scale: null              # [TEST REQUIRED] tamanho relativo da cabeca
-    head_width_relative: null     # [TEST REQUIRED] largura relativa
-    torso_length: null            # [TEST REQUIRED]
-    arm_length_relative: null     # [TEST REQUIRED]
-    leg_length_relative: null     # [TEST REQUIRED]
-    limb_scale: null              # [TEST REQUIRED]
-    hand_scale: null              # [TEST REQUIRED]
-    foot_scale: null              # [TEST REQUIRED]
+    head_scale: large
+    head_to_body_ratio:
+      value: approximately_2_5_to_3_heads
+      confidence: medium
+      exact: false
+    torso_length: short
+    limb_length: shortened
+    hand_scale: small
+    foot_scale: small
+    # Nao observados nas referencias — permanecem null.
+    head_width_relative: null      # [TEST REQUIRED]
+    arm_length_relative: null      # [TEST REQUIRED]
+    leg_length_relative: null      # [TEST REQUIRED]
 
   # --- B. ROSTO ----------------------------------------------------------
   face:
-    eye_scale: null               # [TEST REQUIRED]
-    eye_shape: null               # [TEST REQUIRED] formato geral
-    nose_complexity: null         # [TEST REQUIRED] ex: ausente/ponto/tracco
-    mouth_complexity: null        # [TEST REQUIRED]
-    face_size_relative: null      # [TEST REQUIRED]
-    facial_simplification: null   # [TEST REQUIRED] low/medium/high
+    eye_scale: large
+    eye_iris_readability: high
+    facial_simplification: high
+    nose_detail: minimal           # minimo ou praticamente ausente
+    mouth_detail: minimal
+    jaw_simplification: high
+    facial_readability: high
+    eye_shape: null                # [TEST REQUIRED] formato nao especificado
+    face_size_relative: null       # [TEST REQUIRED]
 
   # --- C. CABELO ---------------------------------------------------------
-  # Regra: cabelo pode ser simplificado, mas elementos que DEFINEM a
-  # personagem devem sobreviver.
+  # Regra: "hair may simplify geometry, but must preserve identity-defining
+  # silhouette and major structures."
   hair:
-    simplification: null          # [TEST REQUIRED]
-    visual_thickness: null        # [TEST REQUIRED]
-    main_strand_count: null       # [TEST REQUIRED] mechas principais
-    silhouette_preservation: null # [TEST REQUIRED]
-    identity_preservation: high   # REGRA, nao observacao
-
-  # --- D. ROUPA ----------------------------------------------------------
-  # Criterio dos mais importantes. Microdetalhe pode cair; o que identifica
-  # a personagem, nao. Simplificada != reinterpretada.
-  clothing:
-    simplification: medium        # REGRA (ponto de partida) — revisar com refs
-    identity_preservation: high   # REGRA
-    detail_density: null          # [TEST REQUIRED]
-    must_preserve:                # REGRA — o que nunca pode ser perdido
-      - main_colors
+    simplification: medium_high
+    major_structure_preservation: high
+    silhouette_preservation: high
+    color_preservation: high
+    identity_preservation: high
+    must_preserve:
       - silhouette
+      - color
+      - major_strands
+      - hairstyle
+      - braids
+      - ponytails
+      - ribbons
+      - identity_defining_elements
+    visual_thickness: null         # [TEST REQUIRED]
+    main_strand_count: null        # [TEST REQUIRED] nao contavel sem a imagem
+
+  # --- D. ROUPA — PRIORIDADE ALTA ----------------------------------------
+  # Regra: "clothing may simplify detail, but must NOT become a fundamentally
+  # different outfit." Simplificada != redesenhada.
+  clothing:
+    simplification: medium
+    main_shape_preservation: very_high
+    color_preservation: high
+    identity_preservation: very_high
+    redesign_allowed: false
+    must_preserve:
+      - main_colors
       - main_garments
-      - characteristic_elements
+      - outfit_silhouette
+      - important_cuts
+      - relevant_sleeves
+      - belts
+      - sashes
       - important_patterns
-      - identifying_visual_accessories
+      - main_ornaments
     may_simplify:
       - micro_detail
+      - small_folds
+      - secondary_decorative_detail
       - small_texture
-      - secondary_ornament_density
+    detail_density: null           # [TEST REQUIRED]
 
   # --- 4. ACESSORIOS -----------------------------------------------------
   accessories:
-    core_identity_preservation: very_high        # REGRA
-    secondary_detail_simplification: allowed     # REGRA
+    core_identity_preservation: very_high
+    secondary_detail_simplification: allowed
     # Categorias que TIPICAMENTE sao core. A classificacao real e por
     # personagem e depende da arte-fonte — nao presumir.
     core_categories_examples:
-      - weapon
       - hat
       - horns
       - ribbons
-      - ornaments
+      - weapon
       - flowers
       - jewelry
       - emblems
+      - hair_elements
+      - highly_characteristic_accessories
 
   # --- 5. SILHUETA -------------------------------------------------------
-  # Deve continuar reconhecivel em tamanho pequeno. Uma personagem nao pode
-  # depender de detalhe minusculo para ser identificada.
   silhouette:
-    readability: high             # REGRA
-    readable_at_px: null          # [TEST REQUIRED] validar em 64/96/128
-    key_elements:                 # o que carrega a silhueta
+    readability: very_high
+    distinctive_features_preserved: true
+    key_elements:
       - hair
       - hat
       - horns
@@ -175,52 +240,87 @@ style:
       - sleeves
       - weapons
       - external_elements
+    readable_at_px: null           # [TEST REQUIRED] validar em 64/96/128
 
-  # --- 6. SHADING / RENDERING --------------------------------------------
-  # Avaliacao qualitativa. Nao escolher numeros arbitrarios ainda.
+  # --- 6. RENDERING ------------------------------------------------------
+  # Qualitativo. Nenhum valor numerico foi inventado.
   rendering:
-    lineart: null                 # [TEST REQUIRED]
-    shading: null                 # [TEST REQUIRED]
-    shading_softness: null        # [TEST REQUIRED]
-    highlights: null              # [TEST REQUIRED]
-    contrast: null                # [TEST REQUIRED]
-    render_level: null            # [TEST REQUIRED]
+    lineart: clean
+    shading: soft
+    highlight_density: low_medium
+    texture_density: low
+    detail_density: medium
+    appearance: game_character_digital_illustration
+    contrast: null                 # [TEST REQUIRED]
 
-  # --- 7. GAME CHARACTER vs GENERIC CHIBI --------------------------------
-  # O alvo NAO e "qualquer personagem anime chibi", e "personagem que parece
-  # pertencer ao mesmo jogo". Eixos em que a consistencia e verificada.
+  # --- 7. LEGIBILIDADE EM ESCALA PEQUENA ---------------------------------
+  # Ordem de prioridade quando algo precisa ser sacrificado.
+  small_scale_priority:
+    - silhouette
+    - face_eyes
+    - hair
+    - main_clothing
+    - main_accessories
+    - secondary_details
+
+  # --- 8. GAME CHARACTER vs GENERIC CHIBI --------------------------------
+  # O alvo e "personagem que parece pertencer ao mesmo jogo".
   game_consistency:
+    visual_language_consistency: high
+    generic_chibi_avoidance: true
+    small_scale_readability: high
+    silhouette_priority: high
+    distinctive_feature_priority: very_high
     checked_axes:
       - proportions
-      - render
+      - facial_treatment
       - eyes
-      - lineart
+      - rendering
       - shading
       - detail_density
+      - simplification
       - accessory_treatment
-    status: null                  # [TEST REQUIRED]
+
+  # --- SPLASH -> CHIBI ---------------------------------------------------
+  # A transformacao observada nas referencias.
+  splash_to_chibi:
+    may_remove:
+      - micro_details
+      - small_folds
+      - secondary_decorative_details
+      - small_textures
+    must_preserve:
+      - main_shape
+      - colors
+      - hair
+      - clothing
+      - main_accessories
+      - visual_identity
+      - silhouette
 
   # --- REFERENCIAS -------------------------------------------------------
-  # Preencher com os arquivos de styles/chibi/references/.
-  # NAO incluir arte das nossas personagens aqui (ver styles/chibi/README.md).
-  # 12 referencias RECEBIDAS e versionadas (commit 3f138a5). Inventario com
-  # sha256 e tamanho em references/references.metadata.json.
+  # 12 arquivos versionados. Inventario com sha256 em
+  # references/references.metadata.json.
   #
-  # ATENCAO: listadas != analisadas. Os arquivos estao em Git LFS e o agente
-  # NAO conseguiu baixa-los (CDN bloqueado por egress). Por isso os campos
-  # observacionais acima continuam null: descrever proporcao ou shading sem
-  # ter visto a imagem seria inventar.
+  # analyzed: false — o AGENTE nao leu os pixels. A analise que originou os
+  # valores acima foi externa (ver source.analyzed_by).
   references:
-    analyzed: false               # [TEST REQUIRED] exige leitura visual
+    analyzed: false
+    analyzed_by_external_visual_review: true
+    agent_pixel_access: false
     analysis_blocker: LFS_CDN_BLOCKED
-    chibi:                        # exemplos do RESULTADO desejado
+    includes:
+      - chibi_examples
+      - splash_examples
+      - pairs_showing_detailed_to_chibi_transformation
+    chibi:
       - Chibi1.png
       - Chibi2.png
       - chibi3.jpg
       - chibi4.jpg
       - chibi5.jpg
       - chibi6.jpg
-    splash:                       # arte original / par splash -> chibi
+    splash:
       - splash1.png
       - splash2.jpg
       - splash3.png

@@ -291,11 +291,15 @@ def test_no_character_art_inside_styles():
                 f"arte de personagem em styles/: {img.relative_to(ROOT)}"
 
 
-def test_style_yaml_v0_has_no_invented_values():
-    """Sem referencias visuais, os campos observacionais ficam null.
+def test_style_yaml_v0_values_have_a_declared_source():
+    """Todo valor de estilo precisa de FONTE declarada.
 
-    Preencher proporcao ou shading sem imagem seria inventar conteudo
-    artistico (AGENTS.md secao 2). Este teste trava isso.
+    Duas fontes sao aceitaveis:
+      - o agente leu os pixels            (references.analyzed = true)
+      - revisao visual externa declarada  (source.analyzed_by_external_visual_review)
+
+    Sem nenhuma das duas, os campos observacionais tem de ficar null. O que
+    o teste impede nao e "valor preenchido", e "valor sem procedencia".
     """
     import yaml
 
@@ -304,35 +308,72 @@ def test_style_yaml_v0_has_no_invented_values():
     assert style["id"] == "chibi_v0"
     assert style["status"] == "experimental"
 
+    src = style["source"]
     refs = style["references"]
-    has_refs = bool(refs.get("chibi")) or bool(refs.get("splash"))
-    assert style["references_present"] == has_refs, \
-        "references_present nao reflete a lista de referencias"
+    agent_read = refs.get("analyzed", False)
+    external = src.get("analyzed_by_external_visual_review", False)
 
-    # Receber a referencia nao e o mesmo que te-la analisado. Enquanto a
-    # analise visual nao acontecer, nenhum valor observacional pode aparecer.
-    if not refs.get("analyzed", False):
+    # Honestidade: se o agente nao leu os pixels, nao pode alegar que leu.
+    if not agent_read:
+        assert src.get("agent_pixel_access") is False, (
+            "references.analyzed=false mas agent_pixel_access nao e false"
+        )
+
+    if not (agent_read or external):
         for section in ("proportions", "face", "rendering"):
             for key, value in style[section].items():
                 assert value is None, (
-                    f"style.{section}.{key} = {value!r} sem referencia visual. "
-                    "Valor observacional exige evidencia."
+                    f"style.{section}.{key} = {value!r} sem fonte. "
+                    "Preencher exige leitura de pixels ou revisao externa declarada."
                 )
+
+    if external:
+        # Observacao externa e provisoria e nao pode se disfarcar de medida.
+        assert src.get("status") == "provisional_observation", src
+        assert src.get("agent_verified") is False, src
+        ratio = style["proportions"]["head_to_body_ratio"]
+        if isinstance(ratio, dict):
+            assert ratio.get("exact") is False, "proporcao aproximada marcada como exata"
+            assert "confidence" in ratio, "proporcao sem grau de confianca"
+
+
+def test_style_yaml_has_no_invented_generation_parameters():
+    """Observacao de estilo NAO autoriza fixar parametro de geracao.
+
+    Sampler, cfg, steps, prompt e LoRA continuam vazios: nada disso foi
+    observado nas referencias, e inventar aqui contaminaria a avaliacao de
+    modelos com um chute.
+    """
+    import yaml
+
+    data = yaml.safe_load((ROOT / "styles" / "chibi" / "style.yaml").read_text())
+    for key, value in data["sampling"].items():
+        assert value is None, f"sampling.{key} = {value!r} nao foi observado"
+    for key, value in data["prompt"].items():
+        assert value == "", f"prompt.{key} preenchido sem evidencia"
+    assert data["lora"]["enabled"] is False, "Style LoRA precisa continuar desabilitado"
 
 
 def test_style_vs_identity_documented():
     """A separacao dos dois eixos precisa estar escrita."""
     doc = (ROOT / "docs" / "style-vs-identity.md").read_text(encoding="utf-8")
-    for term in ("STYLE", "IDENTITY", "global", "por personagem"):
+    for term in ("STYLE", "IDENTITY", "DESIGN PRESERVATION",
+                 "global", "por personagem"):
         assert term in doc, f"'{term}' ausente de style-vs-identity.md"
+    # A distincao design != identidade precisa estar escrita, nao subentendida.
+    assert "Simplificar é remover detalhe" in doc
+    # E a proveniencia externa dos valores tem de estar declarada.
+    assert "externa" in doc, "proveniencia das observacoes nao declarada"
 
 
 def test_eval_sheet_separates_style_and_identity():
     """A ficha precisa de STYLE e IDENTITY separados, e OVERALL humano."""
     sheet = (ROOT / "docs" / "model-eval" / "ficha-avaliacao.md").read_text(
         encoding="utf-8")
-    assert "STYLE SCORE" in sheet
-    assert "IDENTITY SCORE" in sheet
+    # Tres eixos distintos: um modelo pode preservar a personagem e perder o
+    # design dela. Sem o terceiro eixo isso passa despercebido.
+    for axis in ("STYLE SCORE", "IDENTITY SCORE", "DESIGN PRESERVATION SCORE"):
+        assert axis in sheet, f"eixo ausente da ficha: {axis}"
     assert "[HUMAN REVIEW REQUIRED]" in sheet
     # OVERALL nao pode ser apresentado como calculo automatico.
     assert "Não é média aritmética" in sheet

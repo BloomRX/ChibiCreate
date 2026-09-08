@@ -1,5 +1,11 @@
 # STYLE vs IDENTITY
 
+> **Proveniência:** os valores de estilo em `styles/chibi/style.yaml` vieram de
+> uma análise visual **externa** das referências, feita fora deste workspace.
+> O agente não teve acesso aos pixels (Git LFS + CDN bloqueado). São
+> observações qualitativas aproximadas, marcadas como
+> `provisional_observation` — não medições.
+
 A distinção mais importante da pipeline. Ela decide o que é global e o que é
 por personagem — e, mais adiante, o que um Style LoRA poderia aprender e o que
 ele **nunca** deve tocar.
@@ -16,7 +22,7 @@ ele **nunca** deve tocar.
 | Escopo | global (todas) | por personagem |
 | Onde mora | `styles/chibi/` | `characters/<id>/` |
 | Muda quando | redefinimos a linguagem visual | trocamos de personagem |
-| Controla | proporções, rendering, simplificação facial, linguagem chibi, tratamento visual | cabelo (design e cor), cor dos olhos, roupa, armas, acessórios, traços distintivos, silhueta específica |
+| Controla | tamanho/proporção da cabeça, proporção corporal, tamanho dos olhos, simplificação facial, simplificação dos membros, tratamento do cabelo, rendering, lineart, shading, densidade de detalhe | cor dos olhos, cor do cabelo, penteado específico, roupa, arma, acessórios, símbolos, elementos distintivos, silhueta específica da personagem |
 
 ## Por que isso importa
 
@@ -59,17 +65,69 @@ Motivo (registrado na pesquisa): descrever traços no texto **compete com a
 imagem de referência** e é a causa nº 1 de o rosto mudar. A identidade deve
 vir da imagem; o estilo, do texto.
 
+## O terceiro eixo: DESIGN PRESERVATION
+
+STYLE e IDENTITY não bastam. Falta uma pergunta que nenhum dos dois responde:
+
+> **Quanto do design original permanece claramente identificável depois da
+> transformação para chibi?**
+
+Isto **não** é o mesmo que identidade. O caso que separa os dois:
+
+> Uma personagem continua reconhecível — cabelo certo, olhos certos, dá para
+> dizer quem é — mas a roupa foi **inteiramente redesenhada**.
+>
+> `IDENTITY` = razoável · `DESIGN_PRESERVATION` = ruim
+
+Sem o terceiro eixo, esse resultado passaria como aceitável. Com ele, a falha
+fica visível e nomeada: o modelo preservou a *pessoa* e descartou o *design*.
+
+Para um jogo, isso importa: o design é o que foi desenhado, aprovado e
+provavelmente vendido. Um chibi que reinterpreta a roupa produz uma
+personagem que "é ela", mas não é o **produto**.
+
+| Eixo | Pergunta |
+|---|---|
+| STYLE | pertence à linguagem visual do jogo? |
+| IDENTITY | continua sendo a mesma personagem? |
+| DESIGN PRESERVATION | o design original sobreviveu à simplificação? |
+
+## A transformação splash → chibi
+
+As referências mostram uma transformação por **simplificação**, não por
+reinterpretação:
+
+```
+SOURCE DETAIL  →  simplificação  →  CHIBI
+```
+
+| Pode remover | Deve preservar |
+|---|---|
+| microdetalhes | forma principal |
+| pequenas dobras | cores |
+| detalhes decorativos secundários | cabelo |
+| pequenas texturas | roupa |
+| | acessórios principais |
+| | identidade visual |
+| | silhueta |
+
+A regra em uma frase:
+
+> **Simplificar é remover detalhe. Redesenhar é trocar o design.** A primeira
+> é o objetivo; a segunda é falha.
+
 ## Consequência para a avaliação de modelos
 
-Um modelo pode acertar um eixo e errar o outro:
+Um modelo pode acertar um eixo e errar outro:
 
 - **estilo bom, identidade ruim** → chibi bonito de outra personagem
-- **identidade boa, estilo ruim** → a personagem certa, mas fora da linguagem
+- **identidade boa, estilo ruim** → a personagem certa, fora da linguagem
   visual do jogo
+- **identidade boa, design ruim** → é ela, mas com outra roupa
 
-São falhas diferentes, com soluções diferentes. Por isso a ficha de avaliação
-pontua **STYLE e IDENTITY separadamente**, e `OVERALL` **não** é média
-aritmética — é julgamento humano.
+São falhas diferentes, com soluções diferentes. Por isso a ficha pontua
+**STYLE, IDENTITY e DESIGN PRESERVATION separadamente**, e `OVERALL` **não** é
+média aritmética — é julgamento humano.
 
 ## Consequência para a estratégia futura
 
