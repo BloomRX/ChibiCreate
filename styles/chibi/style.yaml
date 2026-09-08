@@ -1,0 +1,69 @@
+# Estilo CHIBI global.
+#
+# Este arquivo define a linguagem visual COMPARTILHADA por todas as
+# personagens. E o eixo "estilo" — ortogonal ao eixo "identidade"
+# (characters/<id>/) e ao eixo "pose" (pose_bank/).
+#
+# Regra critica de identidade: o bloco de prompt abaixo descreve APENAS estilo
+# e enquadramento. Ele NUNCA deve descrever rosto, cabelo, cor de olho, roupa
+# ou acessorio — isso compete com as imagens de referencia e causa drift.
+
+schema_version: 1
+name: chibi
+version: v0
+
+# ---------------------------------------------------------------------------
+# MODELO BASE — resolvido via config/models.lock.yaml
+# ---------------------------------------------------------------------------
+model:
+  key: qwen_image_edit_2511
+  # [TEST REQUIRED] modelo ainda nao verificado. Ver LICENSES.md.
+
+lora:
+  enabled: false          # spec §16: NAO treinar Style LoRA no MVP
+  key: null
+  weight: 0.8
+
+# ---------------------------------------------------------------------------
+# PROMPT DE ESTILO
+# Preencher durante a FASE 3, com base no que empiricamente funcionar.
+# Deixado vazio de proposito: inventar prompt agora seria especulacao.
+# ---------------------------------------------------------------------------
+prompt:
+  style_block: ""         # [TEST REQUIRED]
+  negative_block: ""      # [TEST REQUIRED]
+
+# ---------------------------------------------------------------------------
+# PARAMETROS TRAVADOS
+# Uma vez que uma combinacao funcionar, ela e travada aqui para que todas as
+# personagens compartilhem as mesmas condicoes de geracao.
+# ---------------------------------------------------------------------------
+sampling:
+  steps: null             # [TEST REQUIRED]
+  cfg: null               # [TEST REQUIRED]
+  sampler: null
+  scheduler: null
+
+# ---------------------------------------------------------------------------
+# CONVENCOES DE CANVAS DO MASTER
+# Todas as personagens sao geradas na MESMA pose e MESMO canvas, para que o
+# script de recorte do rig seja identico para todas.
+# ---------------------------------------------------------------------------
+master_canvas:
+  pose: a_pose
+  facing: front
+  # fracao da altura do canvas ocupada pela personagem
+  subject_height_ratio: 0.85
+  # margem inferior (pes) em fracao da altura — ancora do pivot
+  floor_margin_ratio: 0.05
+  background: transparent
+
+# ---------------------------------------------------------------------------
+# PROPORCOES CHIBI — alvo estilistico, verificavel visualmente
+# ---------------------------------------------------------------------------
+proportions:
+  head_to_body_ratio: null   # [TEST REQUIRED] ex: 1:2.5, 1:3
+  notes: >
+    Definir apos ver os primeiros candidatos. A proporcao precisa sobreviver
+    a reducao para 64px — cabeca grande demais vira mancha, pequena demais
+    perde legibilidade.

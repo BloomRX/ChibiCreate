@@ -1,0 +1,47 @@
+# --- TEMPORARY vs CANONICAL -------------------------------------------------
+# work/ e a area descartavel: candidatos, intermediarios, logs, downloads.
+# Nada em work/ e fonte da verdade. Se some, regera-se pela recipe.
+work/
+!work/.gitkeep
+
+# candidatos nunca entram no repo, mesmo se escritos no lugar errado
+characters/*/chibi/candidates/
+**/candidates/
+
+# --- MODELOS ----------------------------------------------------------------
+# Pesos NUNCA no Git. Apenas hashes em config/models.lock.yaml.
+models/
+*.safetensors
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.gguf
+*.bin
+
+# --- PYTHON -----------------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- GODOT ------------------------------------------------------------------
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+
+# --- SO / EDITOR ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# --- SEGREDOS ---------------------------------------------------------------
+.env
+*.token
+secrets.yaml

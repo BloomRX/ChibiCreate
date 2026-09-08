@@ -1,0 +1,33 @@
+# Ambiente: cloud
+# Backend ComfyUI remoto para inferencia pesada (Qwen-Image-Edit, ControlNet).
+#
+# Credenciais NUNCA neste arquivo. Usar variaveis de ambiente:
+#   CHIBI_COMFY_URL, CHIBI_COMFY_TOKEN
+
+schema_version: 1
+
+name: cloud
+kind: remote_gpu
+
+comfyui:
+  enabled: true
+  base_url_env: CHIBI_COMFY_URL
+  token_env: CHIBI_COMFY_TOKEN
+  base_url: null           # resolvido em runtime a partir da env var
+  timeout_seconds: 900
+  poll_interval_seconds: 2
+
+capabilities:
+  gpu_inference: true
+  cpu_tools: false
+  rigging: false
+  godot: false
+
+requirements:
+  min_vram_gb: 24          # Qwen-Image-Edit-2511 FP8 ~20.5GB
+  suggested_gpu: ["L4", "L40S", "A10", "RTX 4090", "A6000"]
+
+cost:
+  # [TEST REQUIRED] medir custo real por personagem no MVP
+  estimated_usd_per_hour: 0.60
+  estimated_usd_per_character: null

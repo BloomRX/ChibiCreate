@@ -1,0 +1,128 @@
+# ChibiCreate — registro travado de modelos
+#
+# REGRA DURA: nenhum modelo entra na pipeline comercial sem uma entrada aqui
+# com nome, repositório, revisão, hash, licença, URL e data de verificação.
+#
+# status:
+#   candidate  = pesquisado e pretendido, AINDA NÃO baixado nem verificado
+#   verified   = baixado, hash conferido, licença lida
+#   rejected   = descartado (registrar motivo)
+#
+# sha256: null significa "não verificado ainda". A CLI deve recusar tratar
+# como dependência comercial qualquer modelo que não esteja verified.
+#
+# Nenhum download foi feito. Nenhum hash foi calculado. Ver LICENSES.md.
+
+schema_version: 1
+last_reviewed: "2026-09-08"
+
+models:
+
+  qwen_image_edit_2511:
+    role: identity_edit
+    status: candidate
+    display_name: Qwen-Image-Edit-2511
+    repo: Qwen/Qwen-Image-Edit-2511
+    source_url: https://huggingface.co/Qwen
+    revision: null
+    files: []
+    sha256: null
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified_on: null
+      source_url: https://comfy.org/workflows/model/qwen-image-edit/
+      notes: >
+        Licença dos PESOS é Apache 2.0. Isso NÃO resolve questões de dataset de
+        treino, outputs ou termos de serviços hospedados. Ver LICENSES.md.
+    vram_notes: "Q4_0 ~11.9GB / Q4_K_M ~13.2GB / FP8 ~20.5GB / BF16 ~40.9GB"
+    runs_on: cloud
+
+  qwen_image_controlnet_union:
+    role: pose_control
+    status: candidate
+    display_name: Qwen-Image-ControlNet-Union (InstantX)
+    repo: InstantX/Qwen-Image-ControlNet-Union
+    source_url: https://huggingface.co/InstantX/Qwen-Image-ControlNet-Union
+    revision: null
+    files: []
+    sha256: null
+    license:
+      spdx: null
+      commercial_use: unverified
+      verified_on: null
+      source_url: https://huggingface.co/InstantX/Qwen-Image-ControlNet-Union
+      notes: >
+        [TEST REQUIRED] Licença do ControlNet Union NAO foi confirmada na
+        pesquisa. Precisa ser lida no card oficial antes de uso comercial.
+    runs_on: cloud
+
+  birefnet:
+    role: background_removal
+    status: candidate
+    display_name: BiRefNet (general)
+    repo: ZhengPeng7/BiRefNet
+    source_url: https://github.com/ZhengPeng7/BiRefNet
+    revision: null
+    files: []
+    sha256: null
+    license:
+      spdx: MIT
+      commercial_use: allowed
+      verified_on: null
+      source_url: https://aireiter.com/blog/best-background-removal-api
+      notes: "Codigo E pesos MIT. Confirmar no repo oficial antes de verified."
+    runs_on: local
+
+  real_esrgan_anime_6b:
+    role: upscale
+    status: candidate
+    display_name: RealESRGAN_x4plus_anime_6B
+    repo: xinntao/Real-ESRGAN
+    source_url: https://github.com/xinntao/Real-ESRGAN
+    revision: null
+    files: []
+    sha256: null
+    license:
+      spdx: BSD-3-Clause
+      commercial_use: allowed
+      verified_on: null
+      source_url: https://onegen.ai/project/enhancing-image-quality-with-real-esrgan-a-comprehensive-guide/
+      notes: "Preferir checkpoint .safetensors; evitar PickleTensor."
+    runs_on: local
+
+# Modelos explicitamente REJEITADOS para dependencia comercial.
+rejected:
+
+  bria_rmbg_2_0:
+    display_name: BRIA RMBG-2.0
+    reason: >
+      Pesos sob CC BY-NC 4.0. Producao exige contrato pago com a BRIA ou uso
+      da API. Nao usar como dependencia padrao (spec §18).
+    alternative: birefnet
+
+  flux_dev_family:
+    display_name: FLUX.1 [dev] / FLUX.2 [dev] / FLUX.2 [klein] 9B
+    reason: "Licenca nao-comercial da Black Forest Labs; exige licenca paga."
+    alternative: qwen_image_edit_2511
+
+  noobai_xl:
+    display_name: NoobAI-XL / Pony
+    reason: "Model card adiciona proibicao explicita de comercializacao."
+    alternative: qwen_image_edit_2511
+
+  seedvr2:
+    display_name: SeedVR2
+    reason: "Licenca restringe uso comercial."
+    alternative: real_esrgan_anime_6b
+
+# Modelos em zona cinzenta — decisao JURIDICA pendente, nao tecnica.
+flagged:
+
+  illustrious_xl:
+    display_name: Illustrious-XL 1.1
+    issue: >
+      FAIPL 1.0 / CreativeML Open RAIL. Diz que o output nao e coberto, mas
+      proibe "monetizacao proprietaria closed-source". Interpretacoes conflitam.
+    decision: pending_legal
+    allowed_use: "prototipagem/exploracao de estilo apenas; NAO no build"
