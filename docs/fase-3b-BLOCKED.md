@@ -169,6 +169,51 @@ código será necessária. Passo a passo em
 
 ---
 
+## Estado oficial — confirmado em 2026-09-08
+
+```
+FASE 3B = BLOCKED
+Blocker único: NO REAL GPU ENDPOINT (GPU NVIDIA / ComfyUI real)
+```
+
+**Não** marcar como `COMPLETE` — não houve execução.
+**Não** marcar como `FAILED` — nada falhou; falta infraestrutura.
+
+### Hardware local (decisão registrada, não problema em aberto)
+
+| Componente | Especificação |
+|---|---|
+| CPU | AMD Ryzen 5 5500 |
+| GPU | AMD Radeon RX 580 8 GB (Polaris / gfx803) |
+| RAM | 16 GB |
+| GPU NVIDIA | inexistente |
+
+A inferência do Qwen-Image-Edit-2511 **não será realizada localmente**. Não
+tentar ROCm experimental, DirectML, Vulkan como atalho, inferência em CPU,
+quantização improvisada nem troca automática de modelo — avaliados na pesquisa
+e descartados. A RX 580 fica para Godot, imagem, Flow 01, spritesheet e
+tarefas auxiliares.
+
+A execução futura exige **GPU NVIDIA com VRAM adequada à configuração
+escolhida**. O `min_vram_gb: 24` de `cloud.yaml` é o *target inicial de
+infraestrutura, não uma garantia universal de execução* — acompanha o dtype
+(BF16 ~40.9 GB · fp8 ~20.5 GB · Q4_K_M ~13.2 GB) e é lido da config, sem
+número hardcoded no código.
+
+### Auditoria do `cloud.yaml` (verificada por grep, não por leitura)
+
+| Critério | Resultado |
+|---|---|
+| credentials / tokens / secrets literais | nenhum |
+| paths absolutos da máquina local | nenhum |
+| dependência da RX 580 / AMD / ROCm | nenhuma |
+| URL ou IP hardcoded | nenhum |
+| `base_url` | `None` — resolvido em runtime via `CHIBI_COMFY_URL` |
+
+Configuração genérica: serve para qualquer endpoint ComfyUI.
+
+---
+
 ## Como destravar
 
 Qualquer uma das opções, **por decisão humana**:

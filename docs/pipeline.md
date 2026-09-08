@@ -108,11 +108,27 @@ Configurado em `config/environments/`.
 
 ### local (`local.yaml`)
 
-Hardware: Ryzen 5 5500 / RX 580 8 GB / 16 GB RAM.
+Hardware de referência do projeto:
+
+| Componente | Especificação |
+|---|---|
+| CPU | AMD Ryzen 5 5500 |
+| GPU | AMD Radeon RX 580 8 GB (Polaris / gfx803) |
+| RAM | 16 GB |
+| GPU NVIDIA | inexistente |
 
 **Fato:** a AMD removeu Polaris/GCN4 (gfx803) do ROCm na v5.x. ComfyUI +
 ControlNet + Qwen-Edit **não** são considerados executáveis de forma confiável
 nesta GPU.
+
+**Limitação declarada:** a inferência do Qwen-Image-Edit-2511 **não será
+realizada localmente**. Isto é uma decisão registrada, não um problema em
+aberto à espera de contorno.
+
+Não tentar, nesta máquina: ROCm experimental, DirectML, Vulkan como atalho
+para o Qwen, inferência em CPU, quantização improvisada, troca automática de
+modelo ou outro backend de inferência. Todos esses caminhos foram avaliados na
+pesquisa (seção 5) e descartados — ver `docs/research/2026-09-07-pipeline-arte-ia.md`.
 
 Serve para: CLI, validação, scripts de imagem, Real-ESRGAN (Vulkan/ncnn),
 rigging, Godot, retoque, GUI do ComfyUI apontando para backend remoto.
@@ -120,7 +136,13 @@ rigging, Godot, retoque, GUI do ComfyUI apontando para backend remoto.
 ### cloud (`cloud.yaml`)
 
 Serve para: Qwen-Image-Edit-2511, ControlNet, geração de candidatos, treino de
-LoRA (fase futura). Mínimo ~24 GB de VRAM.
+LoRA (fase futura).
+
+Exige uma **GPU NVIDIA com VRAM adequada à configuração escolhida**. O valor em
+`requirements.min_vram_gb` é **24 GB**, mas isso é o *target inicial de
+infraestrutura, não uma garantia universal de execução*: o número acompanha o
+dtype configurado (BF16 ~40.9 GB · fp8 ~20.5 GB · Q4_K_M ~13.2 GB). Ao trocar
+o dtype, ajuste também o limiar — o preflight lê da config, nada é hardcoded.
 
 Credenciais **nunca** em arquivo — apenas variáveis de ambiente:
 

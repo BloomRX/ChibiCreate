@@ -34,7 +34,14 @@ capabilities:
   godot: false
 
 requirements:
-  min_vram_gb: 24          # Qwen-Image-Edit-2511 FP8 ~20.5GB
+  # 24 GB e o TARGET INICIAL de infraestrutura, nao uma garantia universal de
+  # execucao. E o que acomoda o dtype fp8 escolhido acima (~20.5 GB) com folga
+  # para VAE e ativacoes. Trocar o dtype muda este numero:
+  #   BF16 ~40.9 GB | fp8 ~20.5 GB | Q4_K_M ~13.2 GB | Q4_0 ~11.9 GB
+  # Ajuste este valor junto com comfyui.models.weight_dtype — o preflight le
+  # daqui, nao ha 24 hardcoded no codigo.
+  # [TEST REQUIRED] limiar nao confrontado com execucao real.
+  min_vram_gb: 24
   suggested_gpu: ["L4", "L40S", "A10", "RTX 4090", "A6000"]
 
 cost:

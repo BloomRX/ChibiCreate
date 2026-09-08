@@ -191,6 +191,10 @@ Mensagem de erro deve dizer **o que fazer**, não só o que quebrou:
   devem falhar
 - Testes não podem depender de rede, GPU ou modelo baixado
 - Testes não deixam lixo: use `tempfile`
+- **Não criar mais fake servers ou dry-runs.** A infraestrutura ComfyUI já está
+  provada por simulação (`FakeComfy`, 65 testes). Teste novo nessa área só se
+  cobrir um **bug real**. Contagem de testes não é métrica de progresso — teste
+  simulado a mais não aproxima o projeto de uma execução real em GPU
 - Rodar antes de reportar conclusão:
 
 ```bash
@@ -269,7 +273,7 @@ Antes de implementar:
 | 2 | FLOW 01 — character reference | ✅ implementada e testada |
 | **GATE 2.1** | **Validar FLOW 01 com arte real (`waifu_001`)** | ✅ executado — aguarda revisão humana do sheet |
 | **3A** | **Infraestrutura ComfyUI + validação do Qwen** | 🟡 código pronto e testado — execução real bloqueada por GPU |
-| **3B** | **Execução real em GPU** | ⛔ **BLOCKED** — sem GPU, sem credencial de cloud, egress bloqueado (`docs/fase-3b-BLOCKED.md`) |
+| **3B** | **Execução real em GPU** | ⛔ **BLOCKED** — blocker único: `NO REAL GPU ENDPOINT` (`docs/fase-3b-BLOCKED.md`) |
 | **3B.1** | **Remote GPU readiness** (preflight, model discovery, segredos) | ✅ pronto — basta `CHIBI_COMFY_URL` |
 | 3 | FLOW 02 — chibi master | ⛔ não iniciada |
 | 4 | Aprovação humana | ⛔ não iniciada |
@@ -279,6 +283,25 @@ Antes de implementar:
 | 8 | Godot + benchmark | ⛔ não iniciada |
 
 > Manter esta tabela atualizada é responsabilidade do agente ao fim de cada fase.
+
+### FASE 3B — estado travado
+
+`BLOCKED`, e permanece assim. **Não** marcar como `COMPLETE` (não houve
+execução) nem como `FAILED` (nada falhou — falta infraestrutura).
+
+Blocker único: **GPU NVIDIA / endpoint ComfyUI real**.
+
+Enquanto estiver BLOCKED, só é permitido trabalho independente de GPU:
+correções de CLI, recipes, hashing, validação, segurança, documentação,
+export, testes unitários de bugs reais, estrutura de assets, spritesheet,
+integração futura com Godot.
+
+**Não iniciar o Flow 02 sem uma execução real do Qwen.** O Flow 02 depende de
+saber como o modelo se comporta com a arte real; começá-lo antes é
+implementação especulativa.
+
+Desbloqueio: `export CHIBI_COMFY_URL=...` e seguir
+`docs/fase-3b-checklist.md`.
 
 ### GATE 2.1 — o que falta
 
@@ -312,6 +335,34 @@ Regras que valem para qualquer backend remoto (ComfyUI, GPU alugada, API):
 4. **Não imprimir a query string** de URLs remotas — costuma conter token.
 5. Ao adicionar um provider novo, repetir as quatro regras acima e cobrir com
    teste antes de usar.
+
+---
+
+## 11-C. Hardware local e o que não tentar
+
+Máquina de desenvolvimento: **Ryzen 5 5500 · RX 580 8 GB · 16 GB RAM · sem GPU
+NVIDIA**.
+
+A RX 580 é estação de trabalho, **não** GPU de inferência. Ela serve para:
+Godot, processamento de imagem, Flow 01, Python, spritesheet, edição e tarefas
+auxiliares.
+
+**Não gastar tempo tentando rodar o Qwen na RX 580.** Especificamente, não
+propor nem tentar: ROCm experimental, DirectML, Vulkan como atalho para o Qwen,
+inferência em CPU, quantização extrema improvisada, troca automática de modelo,
+outro backend de inferência. A AMD removeu gfx803 do ROCm na v5.x — isso é
+fato apurado, não obstáculo a contornar.
+
+A inferência do Qwen acontece **remotamente**, em GPU NVIDIA, via
+`CHIBI_COMFY_URL`. A arquitetura é congelada:
+
+```
+LOCAL → Python CLI → REMOTE COMFYUI → NVIDIA GPU → Qwen-Image-Edit-2511 → output → LOCAL
+```
+
+**VRAM:** o `min_vram_gb` de `cloud.yaml` é o *target inicial de
+infraestrutura, não uma garantia universal de execução*. Acompanha o dtype
+escolhido; não tratar 24 GB como requisito absoluto e não hardcodar no código.
 
 ---
 
