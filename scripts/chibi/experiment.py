@@ -339,6 +339,7 @@ def run_qwen_edit(
     character_id: str,
     *,
     input_rel: str = "reference/full_body.png",
+    extra_refs: tuple[str, ...] = (),
     prompt: str,
     environment_name: str | None = None,
     model_key: str = "qwen_image_edit_2511",
@@ -363,6 +364,16 @@ def run_qwen_edit(
             f"input nao encontrado: {input_path}. Rode 'chibi flow01 "
             f"{character_id}' antes."
         )
+
+    # Multi-referencia: cada ref extra vira INPUT_IMAGE_2, _3, ... O workflow
+    # precisa ter o placeholder correspondente, senao a referencia seria
+    # aceita na CLI e silenciosamente ignorada no grafo.
+    extra_paths: list[Path] = []
+    for rel in extra_refs:
+        rp = cp.root / rel
+        if not rp.is_file():
+            raise ExperimentError(f"referencia extra nao encontrada: {rp}")
+        extra_paths.append(rp)
 
     ok, why = config.technically_usable(model_key)
     if not ok:
@@ -433,6 +444,26 @@ def run_qwen_edit(
         "HEIGHT": params["height"],
         "OUTPUT_PREFIX": f"chibi_exp/{character_id}_{run_id}",
     }
+    for i, rp in enumerate(extra_paths, start=2):
+        values[f"INPUT_IMAGE_{i}"] = rp.name
+
+    # Guarda: referencia passada mas sem lugar no grafo = ref ignorada.
+    _wf_text = json.dumps(workflow)
+    for i in range(2, len(extra_paths) + 2):
+        if f"%%INPUT_IMAGE_{i}%%" not in _wf_text:
+            raise ExperimentError(
+                f"workflow '{workflow_name}/{workflow_version}' nao tem "
+                f"%%INPUT_IMAGE_{i}%%: a referencia extra seria ignorada. "
+                "Use um workflow multi-referencia (ex: v2)."
+            )
+
+    # o input extra tambem vai junto, para o run ser auditavel sozinho
+    local_extras: list[Path] = []
+    for i, rp in enumerate(extra_paths, start=2):
+        dst = run_dir / f"input_{i}{rp.suffix}"
+        shutil.copy2(rp, dst)
+        local_extras.append(dst)
+
     resolved = resolve_workflow(workflow, values)
     (run_dir / "workflow.resolved.json").write_text(
         json.dumps(resolved, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -462,6 +493,8 @@ def run_qwen_edit(
         timings["upload_seconds"] = round(_time.time() - t_up, 2)
 
         values["INPUT_IMAGE"] = uploaded
+        for i, rp in enumerate(extra_paths, start=2):
+            values[f"INPUT_IMAGE_{i}"] = client.upload_image(rp)
         resolved = resolve_workflow(workflow, values)
         (run_dir / "workflow.resolved.json").write_text(
             json.dumps(resolved, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -516,6 +549,14 @@ def run_qwen_edit(
         timings=timings,
         cost=cost,
     )
+    all_refs = [local_input] + local_extras
+    recipe["reference_count"] = len(all_refs)
+    recipe["references"] = [
+        {"role": role, "file": rp.name, "sha256": sha256_file(rp)}
+        for role, rp in zip(
+            ["full_body"] + [Path(r).stem for r in extra_refs], all_refs
+        )
+    ]
     if dry_run:
         recipe["dry_run"] = True
     recipe_path = run_dir / "recipe.json"

@@ -1157,6 +1157,83 @@ def test_flux2_env_has_no_secrets():
 # --- runner -----------------------------------------------------------------
 
 
+def test_flux2_v2_chains_three_references_into_conditioning():
+    """As 3 referencias precisam CHEGAR ao sampler, nao so existir no JSON.
+
+    O modo de falhar aqui e silencioso: um LoadImage solto no grafo nao
+    condiciona nada, e a imagem sai como se a referencia nunca tivesse sido
+    passada. O teste caminha do KSampler.positive para tras e exige que os
+    tres LoadImage sejam alcancaveis.
+    """
+    import json
+
+    wf = json.loads(
+        (ROOT / "workflows" / "experimental" / "flux2_klein_edit" / "v2.json")
+        .read_text(encoding="utf-8")
+    )
+    nodes = {k: v for k, v in wf.items() if not k.startswith("_")}
+
+    def upstream(nid, seen=None):
+        seen = seen if seen is not None else set()
+        if nid in seen:
+            return seen
+        seen.add(nid)
+        for value in nodes[nid]["inputs"].values():
+            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+                upstream(value[0], seen)
+        return seen
+
+    loads = {k for k, v in nodes.items() if v["class_type"] == "LoadImage"}
+    assert len(loads) == 3, f"esperado 3 LoadImage, achei {len(loads)}"
+
+    reachable = upstream(nodes["10"]["inputs"]["positive"][0])
+    faltando = loads - reachable
+    assert not faltando, (
+        f"LoadImage {sorted(faltando)} nao alcanca o condicionamento: "
+        "a referencia seria ignorada silenciosamente"
+    )
+
+    # O negativo do FLUX e texto zerado: nao pode arrastar referencia junto.
+    neg = upstream(nodes["10"]["inputs"]["negative"][0])
+    assert not (loads & neg), "negativo carrega referencia de imagem"
+
+    # Cada ReferenceLatent recebe conditioning do anterior (cadeia, nao paralelo).
+    refs = sorted((k for k, v in nodes.items()
+                   if v["class_type"] == "ReferenceLatent"), key=int)
+    assert len(refs) == 3, refs
+    for nid in refs[1:]:
+        origem = nodes[nid]["inputs"]["conditioning"][0]
+        assert nodes[origem]["class_type"] == "ReferenceLatent", (
+            f"ReferenceLatent {nid} nao encadeia: conditioning vem de "
+            f"{nodes[origem]['class_type']}"
+        )
+
+
+def test_flux2_v2_only_changes_reference_count():
+    """v1 -> v2 pode mudar SO o numero de referencias.
+
+    Se sampler, cfg, steps, prompt ou resolucao mudarem junto, o experimento
+    deixa de isolar a variavel e a comparacao run_001 vs run_003 perde sentido.
+    """
+    import json
+
+    base = ROOT / "workflows" / "experimental" / "flux2_klein_edit"
+    v1 = json.loads((base / "v1.json").read_text(encoding="utf-8"))
+    v2 = json.loads((base / "v2.json").read_text(encoding="utf-8"))
+
+    travados = [
+        ("10", "seed"), ("10", "steps"), ("10", "cfg"), ("10", "sampler_name"),
+        ("10", "scheduler"), ("10", "denoise"), ("9", "width"), ("9", "height"),
+        ("9", "batch_size"), ("5", "text"), ("1", "unet_name"),
+        ("1", "weight_dtype"), ("2", "clip_name"), ("3", "vae_name"),
+    ]
+    for node, field in travados:
+        assert v1[node]["inputs"][field] == v2[node]["inputs"][field], (
+            f"v2 alterou {node}.{field}: a variavel experimental deixou de ser "
+            "apenas REFERENCE COUNT"
+        )
+
+
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

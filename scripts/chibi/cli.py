@@ -479,6 +479,8 @@ def cmd_experiment(args: argparse.Namespace) -> int:
             environment_name=env_name,
             model_key=model_key,
             workflow_name=workflow_name,
+        workflow_version=getattr(args, "workflow_version", "v1"),
+        extra_refs=tuple(getattr(args, "extra_refs", []) or ()),
             overrides=overrides,
             dry_run=getattr(args, "dry_run", False),
             eval_mode=eval_mode,
@@ -675,6 +677,13 @@ def build_parser() -> argparse.ArgumentParser:
                       help="candidato a avaliar")
     p_me.add_argument("--character", required=True)
     p_me.add_argument("--input", default="reference/full_body.png")
+    p_me.add_argument("--ref", action="append", default=[], dest="extra_refs",
+                      metavar="REL",
+                      help="referencia ADICIONAL (repetivel). Exige workflow "
+                           "multi-referencia. Ex: --ref reference/face.png")
+    p_me.add_argument("--workflow-version", default="v1",
+                      dest="workflow_version",
+                      help="versao do workflow (v2 = multi-referencia)")
     p_me.add_argument("--prompt", required=True,
                       help="o que MUDAR. Nao descrever rosto/cabelo.")
     p_me.add_argument("--env", help="sobrepoe o ambiente do candidato")
