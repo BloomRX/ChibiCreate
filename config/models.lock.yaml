@@ -58,6 +58,91 @@ models:
     dtype: BF16
     pipeline: QwenImageEditPlusPipeline
     library: diffusers
+
+    # ------------------------------------------------------------------
+    # Redistribuicao oficial em arquivo unico, para ComfyUI.
+    # Repo: Comfy-Org/Qwen-Image-Edit_ComfyUI  sha 984166f60a9b1fcede5e9b9287b7a7aebc050010
+    # Licenca: Apache-2.0 (cardData.license, verificado em /api/models 2026-09-08)
+    # Mantido pela Comfy-Org, NAO e quantizacao comunitaria arbitraria.
+    #
+    # ATENCAO: nao existe variante fp8_e4m3fn do 2511. Existe para o 2509 e
+    # para o Qwen-Image-Edit original. Confundir os dois foi um bug real
+    # corrigido em cloud.yaml nesta data.
+    #
+    # sha256 abaixo = campo lfs.oid do HuggingFace (que E o sha256 do
+    # arquivo). NAO conferido localmente: pesos nunca baixados aqui.
+    # weights.verified permanece false ate um download real conferir.
+    comfyui_single_file:
+      repo: Comfy-Org/Qwen-Image-Edit_ComfyUI
+      revision: 984166f60a9b1fcede5e9b9287b7a7aebc050010
+      license: Apache-2.0
+      license_verified_on: "2026-09-08"
+      verified: false
+      variants:
+        qwen_image_edit_2511_bf16.safetensors:
+          path: split_files/diffusion_models/qwen_image_edit_2511_bf16.safetensors
+          size_bytes: 40861031560
+          sha256: ae42d927b5fac4f278b9a894554c727e619727a63622976f2d95625be4bce08c
+          note: precisao total; nao cabe em GPU de 16-24 GB
+        qwen_image_edit_2511_fp8mixed.safetensors:
+          path: split_files/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors
+          size_bytes: 20533762817
+          sha256: c9fdc158e46d3b61ef75f21ae866ca2fe808bf4a53643120d1c1e87c19280a4e
+          note: variante escolhida em cloud.yaml. ~20.5 GB de pesos
+        qwen_image_edit_2511_int8_convrot.safetensors:
+          path: split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors
+          size_bytes: 20499083824
+          sha256: 11b5af5ac601821d73930c84846c9a158e67177356daf927ce1c8d10f3963829
+          note: int8; nao avaliado
+
+  qwen_2_5_vl_7b_text_encoder:
+    role: text_encoder
+    display_name: Qwen2.5-VL 7B (text encoder para Qwen-Image)
+    repo: Comfy-Org/Qwen-Image_ComfyUI
+    revision: 7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f
+    source_url: https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://huggingface.co/api/models/Comfy-Org/Qwen-Image_ComfyUI
+    weights:
+      verified: false
+      files:
+        qwen_2.5_vl_7b_fp8_scaled.safetensors:
+          path: split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+          size_bytes: 9384670680
+          sha256: cb5636d852a0ea6a9075ab1bef496c0db7aef13c02350571e388aea959c5c0b4
+        qwen_2.5_vl_7b.safetensors:
+          path: split_files/text_encoders/qwen_2.5_vl_7b.safetensors
+          size_bytes: 16584415576
+          sha256: cfafd739459bc86257397259f612a9aee88e5b98e85b5c0d0d1717e898b3463a
+          note: precisao total; nao usado no experimento Colab
+
+  qwen_image_vae:
+    role: vae
+    display_name: Qwen-Image VAE
+    repo: Comfy-Org/Qwen-Image_ComfyUI
+    revision: 7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f
+    source_url: https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://huggingface.co/api/models/Comfy-Org/Qwen-Image_ComfyUI
+    weights:
+      verified: false
+      files:
+        qwen_image_vae.safetensors:
+          path: split_files/vae/qwen_image_vae.safetensors
+          size_bytes: 253806246
+          sha256: a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f
     vram_notes: "Q4_0 ~11.9GB / Q4_K_M ~13.2GB / FP8 ~20.5GB / BF16 ~40.9GB"
     runs_on: cloud
     required_for_phase: 3

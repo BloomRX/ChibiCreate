@@ -134,8 +134,11 @@ def make_handler(state: FakeComfyState):
                 folder = self.path.rsplit("/", 1)[-1]
                 if state.mode == "with_models":
                     return self._send(200, {
+                        # Nome REAL do repo oficial Comfy-Org (sha 984166f6).
+                        # Nao existe variante fp8_e4m3fn do 2511 — so bf16,
+                        # fp8mixed e int8_convrot.
                         "diffusion_models":
-                            ["qwen_image_edit_2511_fp8_e4m3fn.safetensors"],
+                            ["qwen_image_edit_2511_fp8mixed.safetensors"],
                         "text_encoders":
                             ["qwen_2.5_vl_7b_fp8_scaled.safetensors"],
                         "vae": ["qwen_image_vae.safetensors"],

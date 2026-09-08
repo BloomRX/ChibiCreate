@@ -20,12 +20,17 @@ comfyui:
   # Nomes dos arquivos de modelo COMO O SERVIDOR OS ENXERGA (dentro de
   # ComfyUI/models/unet, /clip, /vae). NAO sao caminhos desta maquina.
   # [TEST REQUIRED] nomes nao confirmados contra um servidor real.
+  # CORRIGIDO 2026-09-08: o nome anterior (qwen_image_edit_2511_fp8_e4m3fn)
+  # NAO EXISTE. Conferido no repo oficial Comfy-Org/Qwen-Image-Edit_ComfyUI
+  # (sha 984166f6). Existe fp8_e4m3fn para 2509 e para o Qwen-Image-Edit
+  # original, mas para o 2511 as variantes sao bf16 / fp8mixed / int8_convrot.
   models:
-    unet: qwen_image_edit_2511_fp8_e4m3fn.safetensors
+    unet: qwen_image_edit_2511_fp8mixed.safetensors
     clip: qwen_2.5_vl_7b_fp8_scaled.safetensors
     vae: qwen_image_vae.safetensors
-    # fp8 escolhido por caber em 24GB; BF16 exigiria ~41GB.
-    weight_dtype: fp8_e4m3fn
+    # UNETLoader.weight_dtype e o dtype de CARGA, nao o nome do arquivo.
+    # O arquivo ja vem quantizado; "default" respeita os pesos como estao.
+    weight_dtype: default
 
 capabilities:
   gpu_inference: true

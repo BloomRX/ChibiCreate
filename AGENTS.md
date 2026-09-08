@@ -303,6 +303,16 @@ implementação especulativa.
 Desbloqueio: `export CHIBI_COMFY_URL=...` e seguir
 `docs/fase-3b-checklist.md`.
 
+**Google Colab (`docs/colab/`)** é infraestrutura *experimental e temporária*
+para destravar a primeira execução. **Não** virar dependência: nenhum código
+do projeto pode saber que o Colab existe. O notebook só exporta
+`CHIBI_COMFY_URL` e chama a CLI existente.
+
+**Nomes de arquivo de modelo:** conferir contra o repositório real antes de
+usar. `qwen_image_edit_2511_fp8_e4m3fn` foi inventado por analogia e **não
+existe** (bug corrigido em 2026-09-08). Variantes reais do 2511: `bf16`,
+`fp8mixed`, `int8_convrot`.
+
 ### GATE 2.1 — o que falta
 
 A Fase 2 só é marcada **COMPLETE** depois que o FLOW 01 rodar sobre a arte-fonte
