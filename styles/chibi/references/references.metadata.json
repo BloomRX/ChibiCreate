@@ -30,8 +30,37 @@
         "method": "github.com/raw/refs/heads/<branch>/... ?download=",
         "result": "FAILED",
         "detail": "TLS EOF. Filtragem por hostname no handshake: api.github.com (140.82.116.6) responde 200, github.com (140.82.116.4), raw. e media.githubusercontent.com fecham a conexao."
+      },
+      {
+        "date": "2026-09-08",
+        "method": "Google Drive shared folder (1X4YqCH84Zf...)",
+        "result": "FAILED",
+        "detail": "TLS EOF em drive.google.com, docs.google.com, www.googleapis.com e ate www.google.com. Dominio Google inteiro fora da allowlist — nao e questao de permissao da pasta compartilhada."
       }
-    ]
+    ],
+    "network_allowlist_probe": {
+      "date": "2026-09-08",
+      "reachable": [
+        "api.github.com",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "codeload.github.com"
+      ],
+      "blocked": [
+        "huggingface.co",
+        "drive.google.com",
+        "docs.google.com",
+        "www.googleapis.com",
+        "www.google.com",
+        "dropbox.com",
+        "i.imgur.com",
+        "raw.githubusercontent.com",
+        "media.githubusercontent.com",
+        "github-cloud.githubusercontent.com",
+        "github.com"
+      ],
+      "conclusion": "Egress e allowlist estrita por hostname, nao bloqueio de CDN especifica. Nenhum servico de hospedagem de arquivo de terceiros vai funcionar. Unico caminho para pixels: anexo direto na conversa QUE CHEGUE AO FILESYSTEM."
+    }
   },
   "files": [
     {
