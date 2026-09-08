@@ -102,20 +102,36 @@ style:
     analyzed_by: external_visual_review     # ChatGPT, fora deste workspace
     status: provisional_observation
     analyzed_by_external_visual_review: true
-    agent_pixel_access: false               # nenhum arquivo legivel em disco
+    agent_pixel_access: true                # resolvido em 2026-09-08
+    # Continua FALSE de proposito. O agente confirmou as observacoes
+    # qualitativamente, mas "verificado" neste projeto significa MEDIDO, e
+    # nenhuma medida foi possivel (ver measurement_blocked). Confirmar a olho
+    # o que outro observador ja tinha descrito nao e verificacao.
     agent_verified: false
 
-    # O agente VIU 1 das 12 referencias, anexada na conversa (Chibi1.png).
-    # Ver nao e medir: a imagem chegou como conteudo da conversa, nao como
-    # arquivo. Nao houve acesso a pixels, nao houve como contar altura em
-    # cabecas nem amostrar cor. Por isso os campos numericos seguem null e
-    # nada aqui foi promovido a "verificado".
-    agent_viewed_in_conversation:
-      count: 1
+    # As 12 referencias passaram a ser blob comum no commit 054c7cf e agora
+    # abrem normalmente. O agente inspecionou os arquivos diretamente.
+    agent_direct_observation:
+      date: "2026-09-08"
+      commit: 054c7cf
+      files_readable: 12
       of_total: 12
-      items: [Chibi1.png]
-      file_on_disk: false
-      measurement_possible: false
+      confirms_external_review: true
+      # O que segue NAO pode ser medido nestas imagens:
+      measurement_blocked:
+        reason: >
+          As 6 referencias chibi sao CAPTURAS DE TELA de jogo — trazem
+          moldura de UI, nome, barra de nivel, palco e fundo cenografico.
+          Segmentar a personagem por contraste devolve 64-88% de cobertura,
+          isto e, pega o cenario junto. Qualquer head_to_body_ratio extraido
+          daqui seria numero errado com aparencia de precisao.
+        affected: [head_to_body_ratio, readable_at_px, contrast]
+      note: >
+        Confirmado visualmente: alvo e chibi de JOGO/GACHA (UI, moldura,
+        palco), nao chibi anime generico. Cabeca grande, olhos grandes com
+        iris detalhada, nariz ausente, boca pequena, lineart limpo, shading
+        suave. As splash sao arte detalhada em corpo inteiro (~920x1968),
+        confirmando o par splash -> chibi.
 
     note: >
       Observacoes qualitativas derivadas visualmente. NAO sao medidas
@@ -318,16 +334,16 @@ style:
   # analyzed: false — o AGENTE nao leu os pixels. A analise que originou os
   # valores acima foi externa (ver source.analyzed_by).
   references:
-    analyzed: false
+    analyzed: true                    # arquivos legiveis desde o commit 054c7cf
     analyzed_by_external_visual_review: true
-    agent_pixel_access: false
-    analysis_blocker: LFS_CDN_BLOCKED
+    agent_pixel_access: true
+    analysis_blocker: null            # resolvido: blob comum no lugar de LFS
+    analysis_depth: qualitative_only  # ver measurement_blocked em source
 
-    # Corroboracao qualitativa (Chibi1.png, vista na conversa em 2026-09-08).
-    # Isto NAO promove nenhum campo a verificado — apenas registra que a
-    # descricao externa e consistente com o que foi visto em 1 de 12.
+    # Corroboracao agora sobre as 12 referencias legiveis (commit 054c7cf).
+    # Confirma a descricao externa qualitativamente; NAO produz medida.
     agent_visual_corroboration:
-      sample: Chibi1.png
+      samples_readable: 12
       consistent_with_external_review: true
       supports:
         - stylized_game_gacha_chibi   # UI/moldura de jogo, nao chibi generico
@@ -337,14 +353,18 @@ style:
         - lineart_clean
         - shading_soft
         - silhouette_readability_high
-      not_measurable_without_file:
+      not_measurable:
         - head_to_body_ratio          # segue approximately_2_5_to_3_heads
         - readable_at_px
         - contrast
-      note: >
-        Uma unica amostra nao caracteriza o conjunto. Consistencia entre
-        personagens (game_consistency) exige comparar varias referencias e
-        permanece nao verificada.
+      reason_not_measurable: >
+        Capturas de tela com UI e cenario: nao ha como segmentar a
+        personagem de forma confiavel. Ver source.measurement_blocked.
+      game_consistency_observed: true
+      game_consistency_note: >
+        As 6 chibi vem do mesmo jogo e compartilham proporcao, tratamento de
+        olho, lineart e shading — sustentam o "parecer do mesmo jogo".
+        Observacao visual, nao metrica.
     includes:
       - chibi_examples
       - splash_examples
