@@ -124,6 +124,41 @@ de que o servidor **nunca** recebe `%%PLACEHOLDER%%` cru.
 
 ---
 
+## Tentativa de desbloqueio — 2026-09-08
+
+Houve autorização explícita para executar a prova real em GPU. A FASE A
+(preflight) foi executada e **parou no primeiro item crítico**, como manda a
+regra: nenhuma GPU foi acionada.
+
+```
+$ chibi comfy status --env cloud
+  NAO CONFIGURADO: ambiente 'cloud': endereco do ComfyUI nao definido.
+  exit = 1
+
+$ chibi comfy preflight --env cloud
+  [FALHA] endpoint: NOT_CONFIGURED
+  NAO PRONTO — 1 bloqueio(s): NOT_CONFIGURED em 'endpoint'
+  exit = 1
+```
+
+Ambiente reverificado na mesma data — **nada mudou**:
+
+| Item | Estado |
+|---|---|
+| `CHIBI_COMFY_URL` | não definida |
+| GPU local | ausente |
+| RunPod / Vast / Modal | egress bloqueado |
+| huggingface.co | egress bloqueado |
+| PyPI / GitHub | acessíveis |
+
+A autorização para executar existe; o **endpoint** é que não existe. Nenhuma
+substituição foi feita: nem outro modelo, nem execução local, nem dry-run
+apresentado como execução real.
+
+**FASE 3B permanece BLOCKED.**
+
+---
+
 ## Preparação concluída (Fase 3B.1)
 
 O repositório já está pronto para a execução real: existe
