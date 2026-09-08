@@ -102,8 +102,21 @@ style:
     analyzed_by: external_visual_review     # ChatGPT, fora deste workspace
     status: provisional_observation
     analyzed_by_external_visual_review: true
-    agent_pixel_access: false               # o agente NAO leu as imagens
+    agent_pixel_access: false               # nenhum arquivo legivel em disco
     agent_verified: false
+
+    # O agente VIU 1 das 12 referencias, anexada na conversa (Chibi1.png).
+    # Ver nao e medir: a imagem chegou como conteudo da conversa, nao como
+    # arquivo. Nao houve acesso a pixels, nao houve como contar altura em
+    # cabecas nem amostrar cor. Por isso os campos numericos seguem null e
+    # nada aqui foi promovido a "verificado".
+    agent_viewed_in_conversation:
+      count: 1
+      of_total: 12
+      items: [Chibi1.png]
+      file_on_disk: false
+      measurement_possible: false
+
     note: >
       Observacoes qualitativas derivadas visualmente. NAO sao medidas
       matematicas e nao devem ser tratadas como regras universais. Onde o
@@ -309,6 +322,29 @@ style:
     analyzed_by_external_visual_review: true
     agent_pixel_access: false
     analysis_blocker: LFS_CDN_BLOCKED
+
+    # Corroboracao qualitativa (Chibi1.png, vista na conversa em 2026-09-08).
+    # Isto NAO promove nenhum campo a verificado — apenas registra que a
+    # descricao externa e consistente com o que foi visto em 1 de 12.
+    agent_visual_corroboration:
+      sample: Chibi1.png
+      consistent_with_external_review: true
+      supports:
+        - stylized_game_gacha_chibi   # UI/moldura de jogo, nao chibi generico
+        - head_scale_large
+        - eye_scale_large
+        - facial_simplification_high  # nariz ausente/minimo, boca pequena
+        - lineart_clean
+        - shading_soft
+        - silhouette_readability_high
+      not_measurable_without_file:
+        - head_to_body_ratio          # segue approximately_2_5_to_3_heads
+        - readable_at_px
+        - contrast
+      note: >
+        Uma unica amostra nao caracteriza o conjunto. Consistencia entre
+        personagens (game_consistency) exige comparar varias referencias e
+        permanece nao verificada.
     includes:
       - chibi_examples
       - splash_examples

@@ -13,7 +13,25 @@
       "github-raw",
       "api-contents-raw"
     ],
-    "unblocks_with": "anexar as imagens na conversa, ou git lfs pull numa maquina com acesso"
+    "unblocks_with": "anexar as imagens na conversa, ou git lfs pull numa maquina com acesso",
+    "agent_viewed_in_conversation": {
+      "date": "2026-09-08",
+      "items": [
+        "Chibi1.png"
+      ],
+      "count": 1,
+      "of_total": 12,
+      "file_on_disk": false,
+      "note": "Anexada na conversa e vista pelo agente. Nao chegou ao filesystem (/home/user/uploads inexistente), portanto nao foi possivel conferir sha256 contra o ponteiro LFS versionado nem medir pixels. Corroboracao qualitativa apenas."
+    },
+    "download_attempts": [
+      {
+        "date": "2026-09-08",
+        "method": "github.com/raw/refs/heads/<branch>/... ?download=",
+        "result": "FAILED",
+        "detail": "TLS EOF. Filtragem por hostname no handshake: api.github.com (140.82.116.6) responde 200, github.com (140.82.116.4), raw. e media.githubusercontent.com fecham a conexao."
+      }
+    ]
   },
   "files": [
     {
