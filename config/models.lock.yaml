@@ -338,6 +338,87 @@ models:
       sha256: null
     runs_on: local
     required_for_phase: 3
+  wai_illustrious_sdxl_v170:
+    display_name: WAI-illustrious-SDXL v17.0
+    # TIPO: checkpoint completo (merge/finetune SDXL), NAO LoRA, NAO adapter.
+    type: checkpoint
+    architecture: SDXL
+    base_model: Illustrious-XL 1.0 (a partir da v14.0, por declaracao do autor)
+    author: WAI0731
+    source: civitai
+    source_url: https://civitai.red/models/827184/wai-illustrious-sdxl
+    requested_file: waiIllustriousSDXL_v170.safetensors
+    status: MODEL_MISSING
+    technical_status: not_verified
+    sha256: null                     # so apos obter o arquivo
+    size_bytes: null
+    revision: "v17.0"
+
+    missing_reason: >
+      Arquivo NAO obtido. civitai.red, civitai.com e huggingface.co estao fora
+      da allowlist de egress desta sandbox (TLS EOF no handshake). Conforme a
+      secao 3 da diretiva, NAO foi buscada versao alternativa: nem v15/v16,
+      nem mirror de terceiro, nem merge parecido.
+
+    license:
+      spdx: null
+      name: Fair AI Public License 1.0-SD (FAIPL-1.0-SD)
+      inherited_from: Illustrious-XL (OnomaAI)
+      license_link: https://freedevproject.org/faipl-1.0-sd/
+      verified: false
+      verified_on: "2026-09-08"
+      commercial_status: pending_human_review
+      source_of_claim: >
+        Pagina do modelo informada pelo usuario + model cards espelho no
+        HuggingFace (John6666/wai-nsfw-illustrious-*) que declaram
+        license_name: faipl-1.0-sd. A pagina Civitai NAO pode ser lida
+        diretamente por esta sandbox.
+
+      # Os quatro eixos exigidos pela diretiva, mantidos SEPARADOS.
+      axes:
+        model_use:
+          status: permitido
+          note: "Uso do checkpoint para gerar imagens nao e restrito pela FAIPL."
+        output_use:
+          status: pending_human_review
+          note: >
+            FAIPL-1.0-SD tem clausula de Output em que o licenciante NAO
+            reivindica direitos sobre o gerado. Ha porem interpretacao publica
+            divergente sobre a proibicao de "monetizacao proprietaria
+            closed-source". NAO afirmamos que o uso comercial do output e
+            proibido — afirmamos que e AMBIGUO e precisa de decisao humana.
+        model_distribution:
+          status: restrito
+          note: "Share-alike: redistribuir o checkpoint exige manter FAIPL."
+        derivatives:
+          status: restrito
+          note: "Derivados (merge, LoRA treinada em cima) herdam a FAIPL."
+
+      conflict_with_project: >
+        O projeto e um JOGO closed-source. A clausula share-alike da FAIPL
+        atinge o MODELO e derivados, nao necessariamente o output — mas essa
+        e exatamente a fronteira em disputa. Ver LICENSES.md.
+
+    ecosystem: sdxl
+    # Parametros do ECOSSISTEMA SDXL/Illustrious, do autor do checkpoint.
+    # NAO copiar do FLUX (cfg 1.0/4 steps) nem do Qwen (cfg 2.5/20 steps).
+    recommended_sampling:
+      sampler: euler_ancestral
+      scheduler: normal
+      steps: 30
+      cfg: 7.0
+      resolution_note: "usar >= 1024x1024; nativo ate 1536x1536"
+      source: >
+        Descricao do proprio autor na pagina do modelo (Steps 30, CFG 7,
+        Euler a). Faixa corroborada por agregadores (15-30 steps, CFG 5-7).
+      verified_against_official_card: false
+
+    notes: >
+      [HUMAN REVIEW REQUIRED] Checkpoint com foco declarado em NSFW (nome
+      original WAI-NSFW-illustrious-SDXL). Nao adicionamos tags NSFW ao
+      prompt; registramos o fato porque afeta o comportamento do modelo e a
+      adequacao ao projeto.
+
 
 # Modelos explicitamente REJEITADOS para dependencia comercial.
 rejected:

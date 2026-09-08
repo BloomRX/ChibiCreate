@@ -1234,6 +1234,98 @@ def test_flux2_v2_only_changes_reference_count():
         )
 
 
+
+def test_wai_checkpoint_is_registered_as_checkpoint_not_lora():
+    """WAI/Illustrious e CHECKPOINT. Tratar como LoRA quebraria o workflow.
+
+    A diretiva foi explicita nesse ponto, e o erro seria silencioso: um
+    checkpoint carregado como LoRA nao falha obviamente, so produz lixo.
+    """
+    import yaml
+
+    lock = yaml.safe_load((ROOT / "config" / "models.lock.yaml").read_text())
+    entry = lock["models"]["wai_illustrious_sdxl_v170"]
+    assert entry["type"] == "checkpoint", entry.get("type")
+    assert entry.get("architecture") == "SDXL"
+    for proibido in ("lora", "adapter", "controlnet"):
+        assert proibido not in str(entry.get("type", "")).lower()
+
+
+def test_wai_missing_checkpoint_is_declared_not_substituted():
+    """Arquivo ausente => MODEL_MISSING, sem sha256 inventado nem substituto.
+
+    O risco real aqui e "resolver" o problema baixando outra versao (v15/v16)
+    ou um merge parecido e seguir como se fosse o mesmo modelo.
+    """
+    import yaml
+
+    lock = yaml.safe_load((ROOT / "config" / "models.lock.yaml").read_text())
+    entry = lock["models"]["wai_illustrious_sdxl_v170"]
+    if entry["status"] == "MODEL_MISSING":
+        assert entry["sha256"] is None, "sha256 preenchido para arquivo ausente"
+        assert entry["technical_status"] == "not_verified"
+        assert entry.get("missing_reason"), "MODEL_MISSING sem motivo registrado"
+    assert entry["revision"] == "v17.0", "revision divergente do pedido"
+
+
+def test_wai_license_axes_are_separate_and_not_overclaimed():
+    """Os 4 eixos da licenca ficam separados; nada de conclusao inventada.
+
+    A diretiva proibe afirmar que o uso comercial do OUTPUT e proibido sem
+    evidencia especifica. Ambiguidade tem de virar pending_human_review, nao
+    uma decisao do agente.
+    """
+    import yaml
+
+    lock = yaml.safe_load((ROOT / "config" / "models.lock.yaml").read_text())
+    lic = lock["models"]["wai_illustrious_sdxl_v170"]["license"]
+    assert lic["commercial_status"] == "pending_human_review"
+    assert lic["verified"] is False, "licenca nao foi lida em fonte primaria"
+    for eixo in ("model_use", "output_use", "model_distribution", "derivatives"):
+        assert eixo in lic["axes"], f"eixo de licenca ausente: {eixo}"
+    assert lic["axes"]["output_use"]["status"] == "pending_human_review"
+
+
+def test_wai_workflow_uses_sdxl_params_not_flux_or_qwen():
+    """O ecossistema tem de ser o do SDXL, nao um copiar-colar do FLUX.
+
+    cfg 1.0 / 4 steps e caracteristica do FLUX destilado; aplicar no SDXL
+    produz imagem quebrada, e o experimento mediria o erro, nao o modelo.
+    """
+    import yaml
+
+    lock = yaml.safe_load((ROOT / "config" / "models.lock.yaml").read_text())
+    samp = lock["models"]["wai_illustrious_sdxl_v170"]["recommended_sampling"]
+    assert samp["cfg"] != 1.0, "cfg 1.0 e do FLUX, nao do SDXL"
+    assert samp["steps"] >= 15, "steps do FLUX destilado aplicados ao SDXL"
+    assert samp["sampler"] != "euler" or samp["steps"] != 4
+
+
+def test_wai_workflow_is_core_only_and_independent():
+    """Workflow proprio, so nodes Core, sem tocar nos outros candidatos."""
+    import json
+
+    base = ROOT / "workflows" / "experimental"
+    wf = json.loads((base / "wai_illustrious_chibi" / "v1.json").read_text())
+    nodes = {k: v for k, v in wf.items() if not k.startswith("_")}
+
+    CORE = {"CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage",
+            "VAEEncode", "KSampler", "VAEDecode", "SaveImage"}
+    usados = {v["class_type"] for v in nodes.values()}
+    assert usados <= CORE, f"node nao-Core sem autorizacao: {usados - CORE}"
+
+    # SDXL tem negativo real: positivo e negativo nao podem ser o mesmo no.
+    ks = nodes["6"]["inputs"]
+    assert ks["positive"][0] != ks["negative"][0]
+
+    # A referencia precisa chegar ao sampler (img2img), senao vira txt2img.
+    assert ks["latent_image"][0] == "5", "latent nao vem do VAEEncode da imagem"
+
+    # Os workflows dos outros candidatos seguem existindo e intactos.
+    assert (base / "flux2_klein_edit" / "v1.json").is_file()
+    assert (base / "flux2_klein_edit" / "v2.json").is_file()
+
+
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

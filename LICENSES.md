@@ -134,6 +134,43 @@ Estes dois são recusados por `config.commercially_usable()` até que a verifica
 
 ## Sinalizados — decisão jurídica pendente
 
+### WAI-illustrious-SDXL v17.0 (candidato 3 da FASE 3B)
+
+**Tipo:** checkpoint SDXL completo (não LoRA, não adapter). Autor: WAI0731.
+**Fonte:** `https://civitai.red/models/827184/wai-illustrious-sdxl`
+**Licença indicada:** Fair AI Public License 1.0-SD, herdada do Illustrious-XL.
+**Verificada em fonte primária:** ❌ não — Civitai e HuggingFace estão fora da
+allowlist de rede desta sandbox. A licença foi corroborada por model cards
+espelho (`John6666/wai-nsfw-illustrious-*`, que declaram `license_name:
+faipl-1.0-sd`), **não** lida na página oficial.
+
+Os quatro eixos, deliberadamente **separados** — a diretiva proíbe tratá-los
+como uma coisa só:
+
+| Eixo | Situação |
+|---|---|
+| Uso do checkpoint | Permitido |
+| Uso dos **outputs** | ⚠️ `pending_human_review` |
+| Redistribuição do checkpoint | Restrito (share-alike FAIPL) |
+| Derivados (merge, LoRA) | Restrito (herdam FAIPL) |
+
+**Sobre o output — o ponto que não pode ser distorcido:** a FAIPL-1.0-SD tem
+cláusula de *Output* em que o licenciante não reivindica direitos sobre o que
+foi gerado. Existe, em paralelo, interpretação pública de que a licença
+proíbe "monetização proprietária closed-source". **Não afirmamos que o uso
+comercial do output é proibido** — afirmamos que é ambíguo. Como este projeto
+é um jogo closed-source, a decisão é jurídica e humana.
+
+**Decisão atual:** `commercial_status: pending_human_review`.
+**Status do arquivo:** `MODEL_MISSING` — os pesos não foram obtidos.
+
+**Observação factual, não julgamento:** o checkpoint nasceu como
+"WAI-NSFW-illustrious-SDXL" e tem foco declarado em conteúdo adulto. Não
+adicionamos tags NSFW a nenhum prompt; registramos porque afeta comportamento
+do modelo e adequação ao projeto.
+
+---
+
 ### Illustrious-XL (família FAIPL)
 
 **Conflito:** a licença afirma que *"o output não é coberto por esta licença"*, mas o material oficial também declara que o modelo *"proíbe monetização proprietária closed-source"*. Interpretações da comunidade divergem publicamente e a OnomaAI reconheceu ambiguidade, migrando a redistribuição para CreativeML Open RAIL.

@@ -52,6 +52,14 @@ MODEL_CANDIDATES: dict[str, dict[str, str]] = {
         "environment": "colab_flux2",
         "label": "FLUX.2 [klein] 4B",
     },
+    # Candidato 3: checkpoint SDXL. Ecossistema DIFERENTE dos outros dois —
+    # nao e modelo de edicao, so tem img2img. Ver o _comment do workflow.
+    "wai-illustrious": {
+        "model_key": "wai_illustrious_sdxl_v170",
+        "workflow": "experimental/wai_illustrious_chibi",
+        "environment": "cloud",
+        "label": "WAI-illustrious-SDXL v17.0",
+    },
 }
 
 # Subdiretorio da avaliacao comparativa: experiments/model_eval/<model_key>/

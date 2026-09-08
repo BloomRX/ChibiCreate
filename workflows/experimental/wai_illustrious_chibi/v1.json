@@ -1,0 +1,154 @@
+{
+  "_comment": [
+    "FASE 3B (MODEL EVALUATION) - candidato 3: WAI-illustrious-SDXL v17.0.",
+    "Checkpoint SDXL completo. NAO e LoRA, NAO e adapter.",
+    "NAO e o Flow 02 e NAO produz Chibi Master.",
+    "",
+    "Formato: API do ComfyUI (POST /prompt). Placeholders %%NOME%% pela CLI.",
+    "",
+    "DIFERENCA ARQUITETURAL CRITICA em relacao a FLUX e Qwen:",
+    "  FLUX.2 e Qwen-Edit sao modelos de EDICAO: recebem a imagem de referencia",
+    "  como condicionamento (ReferenceLatent / TextEncodeQwenImageEdit) e",
+    "  transformam a personagem preservando identidade.",
+    "  SDXL/Illustrious NAO tem esse mecanismo. O unico caminho Core para usar",
+    "  uma imagem de entrada e img2img: VAEEncode -> KSampler com denoise < 1.0.",
+    "  Isso NAO e equivalente. img2img preserva COMPOSICAO e CORES, nao",
+    "  IDENTIDADE; e com denoise alto o bastante para virar chibi (mudanca de",
+    "  proporcao), a identidade tende a se perder.",
+    "  Ver o relatorio: essa e a limitacao central deste candidato.",
+    "",
+    "SAMPLING: parametros do ecossistema SDXL/Illustrious declarados pelo autor",
+    "do checkpoint (euler_ancestral / normal / 30 steps / cfg 7.0). NAO copiar",
+    "do FLUX (cfg 1.0, 4 steps) nem do Qwen (cfg 2.5, 20 steps).",
+    "",
+    "NEGATIVO: SDXL usa prompt negativo REAL (dois CLIPTextEncode), ao",
+    "contrario do FLUX que zera o condicionamento.",
+    "",
+    "Somente nodes Core: CheckpointLoaderSimple, CLIPTextEncode, LoadImage,",
+    "VAEEncode, KSampler, VAEDecode, SaveImage.",
+    "",
+    "[TEST REQUIRED] Nunca executado. Checkpoint ainda nao obtido",
+    "(status MODEL_MISSING). Validar com 'chibi comfy validate' contra",
+    "/object_info antes da primeira execucao real."
+  ],
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "WAI-illustrious-SDXL v17.0 (checkpoint)"
+    },
+    "inputs": {
+      "ckpt_name": "%%CKPT_NAME%%"
+    }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Prompt positivo"
+    },
+    "inputs": {
+      "text": "%%PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Prompt negativo (SDXL usa negativo real)"
+    },
+    "inputs": {
+      "text": "%%NEGATIVE_PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Referencia (unica) - full_body"
+    },
+    "inputs": {
+      "image": "%%INPUT_IMAGE%%",
+      "upload": "image"
+    }
+  },
+  "5": {
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "img2img: referencia -> latente"
+    },
+    "inputs": {
+      "pixels": [
+        "4",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "6": {
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sampler (parametros SDXL/Illustrious)"
+    },
+    "inputs": {
+      "seed": "%%SEED%%",
+      "steps": "%%STEPS%%",
+      "cfg": "%%CFG%%",
+      "sampler_name": "%%SAMPLER%%",
+      "scheduler": "%%SCHEDULER%%",
+      "denoise": "%%DENOISE%%",
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
+    }
+  },
+  "7": {
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode"
+    },
+    "inputs": {
+      "samples": [
+        "6",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "8": {
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Output"
+    },
+    "inputs": {
+      "images": [
+        "7",
+        0
+      ],
+      "filename_prefix": "%%OUTPUT_PREFIX%%"
+    }
+  }
+}
