@@ -377,6 +377,42 @@ Regras que valem para qualquer backend remoto (ComfyUI, GPU alugada, API):
 
 ---
 
+## 11-D. STYLE vs IDENTITY
+
+Separação estrutural do projeto. Ver `docs/style-vs-identity.md`.
+
+**STYLE** = como a personagem é desenhada (proporções, rendering,
+simplificação facial). Global, vive em `styles/chibi/`.
+**IDENTITY** = quem é a personagem (cabelo, olhos, roupa, armas, acessórios).
+Por personagem, vive em `characters/<id>/`.
+
+Regra prática: muda **todas** as personagens → STYLE. Muda **uma** → IDENTITY.
+
+```
+styles/chibi/
+├── references/
+│   ├── chibi/      exemplos do RESULTADO desejado
+│   └── splash/     arte original / par splash → chibi
+├── pose_bank/
+├── style.yaml
+└── README.md
+```
+
+**Nunca colocar arte das nossas personagens em `styles/`.** Elas vivem só em
+`characters/<id>/source/` e `characters/<id>/reference/`. Há teste que falha
+se um arquivo com nome de personagem aparecer em `styles/`.
+
+**Não preencher valor observacional sem referência visual.** Proporção,
+shading, tratamento de olhos: sem imagem, o campo fica `null` com
+`[TEST REQUIRED]`. Inventar isso é criar conteúdo artístico — proibido pela
+seção 2. Há teste que trava campos preenchidos enquanto
+`references_present: false`.
+
+A ficha de avaliação pontua os dois eixos **separadamente**, e `OVERALL`
+**não** é média aritmética — é julgamento humano.
+
+---
+
 ## 11-C. Hardware local e o que não tentar
 
 Máquina de desenvolvimento: **Ryzen 5 5500 · RX 580 8 GB · 16 GB RAM · sem GPU

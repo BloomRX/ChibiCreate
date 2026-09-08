@@ -383,7 +383,7 @@ SOURCE → REFERENCE_READY → CHIBI_CANDIDATES → CHIBI_APPROVED
 
 ```
 config/          project.yaml, models.lock.yaml, quality_gates.yaml, environments/
-styles/chibi/    style.yaml, pose_bank/ (GLOBAL), reference_sheets/
+styles/chibi/    style.yaml, pose_bank/ (GLOBAL), references/{chibi,splash}/
 characters/<id>/ character.yaml, STATUS.md, source/, reference/, chibi/,
                  poses/, animation/, rig/, export/
 workflows/       templates ComfyUI versionados, por flow

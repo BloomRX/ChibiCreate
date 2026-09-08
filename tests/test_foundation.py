@@ -256,6 +256,100 @@ def test_future_modules_fail_loudly():
 
 # --- runner standalone ------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# STYLE SPECIFICATION v0 — estrutura e separacao STYLE/IDENTITY
+# ---------------------------------------------------------------------------
+
+
+def test_style_references_structure():
+    """styles/chibi/references/{chibi,splash}/ e a estrutura acordada."""
+    base = ROOT / "styles" / "chibi" / "references"
+    assert base.is_dir(), "styles/chibi/references/ ausente"
+    for sub in ("chibi", "splash"):
+        assert (base / sub).is_dir(), f"references/{sub}/ ausente"
+    # A pasta antiga nao pode ressurgir em paralelo.
+    assert not (ROOT / "styles" / "chibi" / "reference_sheets").exists(), \
+        "reference_sheets/ voltou — a estrutura acordada e references/"
+
+
+def test_no_character_art_inside_styles():
+    """Arte das NOSSAS personagens nunca entra em styles/.
+
+    Regra do usuario: personagens vivem so em characters/<id>/source/ e
+    characters/<id>/reference/. Misturar os eixos contamina a avaliacao —
+    deixa de ficar claro se um resultado veio da identidade ou do exemplo
+    de estilo.
+    """
+    style_dir = ROOT / "styles"
+    imgs = [p for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp")
+            for p in style_dir.rglob(ext)]
+    char_ids = {d.name for d in (ROOT / "characters").iterdir() if d.is_dir()}
+    for img in imgs:
+        for cid in char_ids:
+            assert cid not in img.name, \
+                f"arte de personagem em styles/: {img.relative_to(ROOT)}"
+
+
+def test_style_yaml_v0_has_no_invented_values():
+    """Sem referencias visuais, os campos observacionais ficam null.
+
+    Preencher proporcao ou shading sem imagem seria inventar conteudo
+    artistico (AGENTS.md secao 2). Este teste trava isso.
+    """
+    import yaml
+
+    data = yaml.safe_load((ROOT / "styles" / "chibi" / "style.yaml").read_text())
+    style = data["style"]
+    assert style["id"] == "chibi_v0"
+    assert style["status"] == "experimental"
+
+    refs = style["references"]
+    has_refs = bool(refs.get("chibi")) or bool(refs.get("splash"))
+    assert style["references_present"] == has_refs, \
+        "references_present nao reflete a lista de referencias"
+
+    if not has_refs:
+        # Campos puramente observacionais: nada pode estar preenchido.
+        for section in ("proportions", "face", "rendering"):
+            for key, value in style[section].items():
+                assert value is None, (
+                    f"style.{section}.{key} = {value!r} sem referencia visual. "
+                    "Valor observacional exige evidencia."
+                )
+
+
+def test_style_vs_identity_documented():
+    """A separacao dos dois eixos precisa estar escrita."""
+    doc = (ROOT / "docs" / "style-vs-identity.md").read_text(encoding="utf-8")
+    for term in ("STYLE", "IDENTITY", "global", "por personagem"):
+        assert term in doc, f"'{term}' ausente de style-vs-identity.md"
+
+
+def test_eval_sheet_separates_style_and_identity():
+    """A ficha precisa de STYLE e IDENTITY separados, e OVERALL humano."""
+    sheet = (ROOT / "docs" / "model-eval" / "ficha-avaliacao.md").read_text(
+        encoding="utf-8")
+    assert "STYLE SCORE" in sheet
+    assert "IDENTITY SCORE" in sheet
+    assert "[HUMAN REVIEW REQUIRED]" in sheet
+    # OVERALL nao pode ser apresentado como calculo automatico.
+    assert "Não é média aritmética" in sheet
+
+
+def test_source_art_of_all_characters_is_present():
+    """Toda personagem registrada tem arte-fonte (ponteiro LFS conta)."""
+    for cdir in sorted((ROOT / "characters").iterdir()):
+        if not cdir.is_dir():
+            continue
+        src = cdir / "source"
+        assert src.is_dir(), f"{cdir.name}: source/ ausente"
+        arts = [p for p in src.iterdir() if p.suffix.lower() in
+                (".png", ".jpg", ".jpeg", ".webp")]
+        assert arts, f"{cdir.name}: nenhuma arte-fonte em source/"
+
+
+
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
