@@ -111,7 +111,35 @@ def extract(
     img = Image.open(path).convert("RGBA")
     arr = np.array(img)
     alpha = arr[:, :, 3]
-    pixels = arr[:, :, :3][alpha > ALPHA_THRESHOLD]
+    mask = alpha > ALPHA_THRESHOLD
+    note = None
+
+    # Arte sem alpha util: o fundo liso dominaria a paleta (numa arte 768x1152
+    # com fundo cinza ele chegou a 66% do peso). Excluimos os pixels do fundo
+    # pela cor. Nao alteramos a imagem — so decidimos o que amostrar.
+    #
+    # Vale tanto para a fonte crua (tudo opaco) quanto para o full_body ja
+    # normalizado, que tem bordas transparentes mas mantem o fundo original
+    # dentro da area do sujeito.
+    if mask.any():
+        from .imaging import (BG_COLOR_TOLERANCE, BG_CORNER_TOLERANCE,
+                              _uniform_background_color)
+
+        rgb = arr[:, :, :3].astype(np.int16)
+        ys, xs = np.where(mask)
+        region = rgb[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        opaque_region = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+
+        bg = _uniform_background_color(region)
+        # o canto so conta como fundo se for opaco de fato
+        if bg is not None and opaque_region[:8, :8].all():
+            fg = (np.abs(rgb - bg).sum(axis=2) > BG_COLOR_TOLERANCE) & mask
+            if 0.02 < fg.mean() < 0.995:
+                mask = fg
+                note = (f"fundo liso rgb({int(bg[0])},{int(bg[1])},{int(bg[2])})"
+                        " excluido por cor (arte sem alpha)")
+
+    pixels = arr[:, :, :3][mask]
 
     if len(pixels) == 0:
         return {
@@ -146,7 +174,7 @@ def extract(
             }
         )
 
-    return {
+    result = {
         "source": path.name,
         "n_colors": len(colors),
         "sampled_pixels": int(len(pixels)),
@@ -154,6 +182,9 @@ def extract(
         "seed": seed,
         "colors": colors,
     }
+    if note:
+        result["note"] = note
+    return result
 
 
 def compare(palette_a: dict, palette_b: dict) -> dict:

@@ -39,7 +39,12 @@ from .imaging import BBox, ImagingError
 DEFAULT_REGIONS: dict[str, dict[str, Any]] = {
     "face":   {"top": 0.02, "bottom": 0.20, "left": 0.20, "right": 0.80, "square": True},
     "hair":   {"top": 0.00, "bottom": 0.28, "left": 0.10, "right": 0.90, "square": True},
-    "outfit": {"top": 0.18, "bottom": 0.95, "left": 0.05, "right": 0.95, "square": False},
+    # left/right/bottom cobrem a caixa inteira: em personagens com manto, capa
+    # ou saia longa a silhueta encosta nas bordas da propria caixa do sujeito.
+    # Medido em waifu_001: silhueta de 0.000 a 0.998 nos dois eixos; as margens
+    # antigas (0.05/0.95) cortavam 4.81% da silhueta na base — a barra do manto
+    # e a ponta dos pes. Ver GATE 2.1 em docs/decisions/ADR-005.
+    "outfit": {"top": 0.18, "bottom": 1.0, "left": 0.0, "right": 1.0, "square": False},
 }
 
 #: 'weapon' NAO tem heuristica: a posicao de uma arma varia demais entre

@@ -417,6 +417,131 @@ def test_pick_primary_source_is_mechanical():
             raise AssertionError("deveria falhar com source inexistente")
 
 
+# --- GATE 2.1: regressoes encontradas com arte real -------------------------
+
+def make_flat_background_art(size=(768, 1152)) -> Image.Image:
+    """Arte RGB SEM alpha, fundo cinza liso, silhueta encostando nas bordas.
+
+    Reproduz a geometria de waifu_001: manto/capa que se espalha ate os limites
+    da caixa do sujeito e pes na base.
+    """
+    w, h = size
+    img = Image.new("RGB", (w, h), (133, 133, 132))
+    d = ImageDraw.Draw(img)
+    cx = w // 2
+    m = int(0.03 * w)  # margem: o sujeito nao ocupa a imagem inteira
+    d.ellipse((cx - 90, int(0.05 * h), cx + 90, int(0.20 * h)),
+              fill=(20, 20, 22))                                    # cabelo
+    d.ellipse((cx - 60, int(0.08 * h), cx + 60, int(0.18 * h)),
+              fill=(239, 215, 205))                                 # rosto
+    d.polygon([(cx - 40, int(0.06 * h)), (cx - 20, int(0.02 * h)),
+               (cx - 10, int(0.07 * h))], fill=(190, 150, 80))      # chifre
+    d.polygon([(cx + 40, int(0.06 * h)), (cx + 20, int(0.02 * h)),
+               (cx + 10, int(0.07 * h))], fill=(190, 150, 80))
+    # manto: chega as bordas laterais e a base da caixa do sujeito
+    d.polygon([(cx - 70, int(0.25 * h)), (cx + 70, int(0.25 * h)),
+               (w - m, h - m), (m, h - m)], fill=(18, 18, 20))
+    d.rectangle((cx - 45, int(0.20 * h), cx + 45, int(0.80 * h)),
+                fill=(35, 35, 40))                                  # corpo
+    d.rectangle((cx - 35, h - m - 30, cx + 35, h - m), fill=(200, 165, 90))  # pes
+    return img
+
+
+def test_subject_bbox_falls_back_when_no_alpha():
+    """Sem alpha, a caixa nao pode ser o canvas inteiro.
+
+    Regressao do GATE 2.1: waifu_001 (768x1152 RGB) devolvia (0,0,768,1152),
+    entao TODAS as fracoes de regiao eram calculadas sobre a imagem toda em
+    vez do corpo, e os recortes saiam errados.
+    """
+    art = make_flat_background_art().convert("RGBA")
+    bbox = imaging.subject_bbox(art)
+    assert bbox is not None
+    assert bbox.as_tuple() != (0, 0, art.width, art.height), \
+        "caiu de volta no canvas inteiro"
+    assert bbox.width < art.width * 0.99
+    assert bbox.height < art.height * 0.99
+    assert bbox.left > 0 and bbox.top > 0
+
+
+def test_opaque_bbox_returns_none_without_flat_background():
+    """Sem fundo liso identificavel, nao adivinhar."""
+    rng = np.random.default_rng(0)
+    noise = Image.fromarray(
+        rng.integers(0, 255, (200, 200, 3), dtype=np.uint8), "RGB"
+    ).convert("RGBA")
+    assert imaging.opaque_subject_bbox(noise) is None
+
+
+def test_alpha_art_ignores_background_fallback():
+    """Arte com alpha de verdade nao deve passar pela deteccao por cor."""
+    art = make_character_art(with_alpha=True)
+    assert imaging.subject_bbox(art).as_tuple() == \
+        imaging.subject_bbox(art, threshold=imaging.ALPHA_THRESHOLD).as_tuple()
+
+
+def test_outfit_region_covers_full_silhouette_width_and_base():
+    """Regressao do GATE 2.1: outfit cortava a barra do manto e os pes.
+
+    Com left=0.05/right=0.95/bottom=0.95 perdia-se 4.81% da silhueta de
+    waifu_001. Manto, capa e saia longa encostam nas bordas da caixa.
+    """
+    r = flow01.DEFAULT_REGIONS["outfit"]
+    assert r["bottom"] == 1.0, "cortaria a base do manto e os pes"
+    assert r["left"] == 0.0 and r["right"] == 1.0, "cortaria as laterais do manto"
+    assert r["square"] is False
+
+
+def test_flow01_outfit_loses_no_silhouette_on_flat_bg_art():
+    """Ponta a ponta: nenhum pixel de silhueta perdido pelo recorte de outfit."""
+    with TempRepo() as repo:
+        make_flat_background_art().save(repo.cdir / "source" / "splash.png")
+        flow01.run("t01", force=True)
+
+        fb = imaging.load_rgba(repo.cdir / "reference" / "full_body.png")
+        bbox = imaging.subject_bbox(fb)
+        arr = np.array(fb)
+        rgb = arr[:, :, :3].astype(np.int16)
+        # cor de fundo conhecida da fixture — nao re-detectar aqui, para o
+        # teste medir o recorte e nao a heuristica de deteccao
+        bg = np.array([133, 133, 132])
+        sil = ((np.abs(rgb - bg).sum(axis=2) > imaging.BG_COLOR_TOLERANCE)
+               & (arr[:, :, 3] > imaging.ALPHA_THRESHOLD))
+        sub = sil[bbox.top:bbox.bottom, bbox.left:bbox.right]
+        h, w = sub.shape
+
+        r = flow01.DEFAULT_REGIONS["outfit"]
+        top, bot = int(r["top"] * h), int(r["bottom"] * h)
+        left, right = int(r["left"] * w), int(r["right"] * w)
+        lost_below = sub[bot:].sum()
+        lost_sides = sub[:, :left].sum() + sub[:, right:].sum()
+        assert lost_below == 0, f"{lost_below} px de silhueta cortados na base"
+        assert lost_sides == 0, f"{lost_sides} px de silhueta cortados nas laterais"
+
+
+def test_palette_excludes_flat_background():
+    """Regressao do GATE 2.1: o cinza de fundo era 66% do peso da paleta."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p = Path(tmpdir) / "a.png"
+        make_flat_background_art().save(p)
+        result = palette.extract(p, n_colors=8)
+        assert "note" in result and "fundo" in result["note"]
+        for color in result["colors"]:
+            r, g, b = color["rgb"]
+            perto_do_cinza = (abs(r - 133) + abs(g - 133) + abs(b - 132)) < 30
+            assert not perto_do_cinza, \
+                f"cor de fundo {color['hex']} entrou na paleta (peso {color['weight']})"
+
+
+def test_palette_keeps_working_on_alpha_art():
+    """A exclusao por cor nao pode estragar arte que ja tem alpha."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p = Path(tmpdir) / "a.png"
+        make_character_art(with_alpha=True).save(p)
+        result = palette.extract(p, n_colors=6)
+        assert result["n_colors"] >= 4
+
+
 def test_weapon_has_no_heuristic():
     """'weapon' nao pode ter recorte inventado — posicao varia demais."""
     assert "weapon" not in flow01.DEFAULT_REGIONS

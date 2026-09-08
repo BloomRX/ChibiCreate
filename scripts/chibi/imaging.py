@@ -22,6 +22,11 @@ NEAREST = Image.Resampling.NEAREST
 #: Limiar de alpha acima do qual um pixel conta como "sujeito".
 ALPHA_THRESHOLD = 8
 
+# Deteccao de fundo liso em arte SEM alpha (soma das diferencas nos 3 canais).
+# Conservador de proposito: e melhor nao detectar do que recortar o sujeito.
+BG_COLOR_TOLERANCE = 30
+BG_CORNER_TOLERANCE = 45
+
 
 class ImagingError(RuntimeError):
     pass
@@ -89,8 +94,69 @@ def has_alpha(path: Path) -> bool:
     return bool((alpha < 255).any())
 
 
+def _uniform_background_color(rgb: np.ndarray, probe: int = 24) -> np.ndarray | None:
+    """Cor de fundo, se os quatro cantos concordarem entre si.
+
+    Retorna None quando os cantos divergem — nesse caso nao ha fundo liso
+    identificavel e adivinhar seria pior do que nao fazer nada.
+    """
+    h, w, _ = rgb.shape
+    probe = max(1, min(probe, h // 4, w // 4))
+    corners = [rgb[:probe, :probe], rgb[:probe, -probe:],
+               rgb[-probe:, :probe], rgb[-probe:, -probe:]]
+    medians = [np.median(c.reshape(-1, 3), axis=0) for c in corners]
+    ref = np.median(np.stack(medians), axis=0)
+    # todos os cantos precisam ficar perto da mediana global
+    if max(float(np.abs(m - ref).sum()) for m in medians) > BG_CORNER_TOLERANCE:
+        return None
+    return ref
+
+
+def opaque_subject_bbox(
+    img: Image.Image, tolerance: int = BG_COLOR_TOLERANCE
+) -> BBox | None:
+    """Caixa do sujeito em imagem SEM alpha util, por contraste com o fundo.
+
+    Usado quando a arte-fonte e RGB (ou tem alpha totalmente opaco): nesse caso
+    `subject_bbox` devolveria o canvas inteiro, e todas as fracoes de regiao
+    seriam calculadas sobre a imagem toda em vez do corpo da personagem.
+
+    NAO remove o fundo e NAO altera pixel algum — apenas mede onde o sujeito
+    esta. A remocao de fundo continua sendo trabalho do BiRefNet (pesos nao
+    baixados) ou de uma fonte com alpha.
+
+    Retorna None se nao houver fundo liso detectavel ou se o resultado for
+    degenerado (sujeito ocupando quase tudo ou quase nada).
+    """
+    rgb = np.array(img.convert("RGB")).astype(np.int16)
+    bg = _uniform_background_color(rgb)
+    if bg is None:
+        return None
+
+    mask = np.abs(rgb - bg).sum(axis=2) > tolerance
+    if not mask.any():
+        return None
+
+    # linhas/colunas com poucos pixels sao ruido de compressao, nao o sujeito
+    min_run = max(2, int(0.002 * max(mask.shape)))
+    rows = np.flatnonzero(mask.sum(axis=1) >= min_run)
+    cols = np.flatnonzero(mask.sum(axis=0) >= min_run)
+    if rows.size == 0 or cols.size == 0:
+        return None
+
+    bbox = BBox(int(cols[0]), int(rows[0]), int(cols[-1]) + 1, int(rows[-1]) + 1)
+    coverage = (bbox.width * bbox.height) / (img.width * img.height)
+    if coverage > 0.995 or coverage < 0.02:
+        return None  # nao aprendemos nada util
+    return bbox
+
+
 def subject_bbox(img: Image.Image, threshold: int = ALPHA_THRESHOLD) -> BBox | None:
     """Caixa do sujeito, definida pelos pixels com alpha acima do limiar.
+
+    Se o alpha for inteiramente opaco (arte RGB), cai para deteccao por
+    contraste com o fundo — sem isso, a caixa seria o canvas inteiro e os
+    recortes heuristicos ficariam todos errados.
 
     Retorna None se a imagem for inteiramente transparente.
     """
@@ -100,7 +166,12 @@ def subject_bbox(img: Image.Image, threshold: int = ALPHA_THRESHOLD) -> BBox | N
         return None
     rows = np.flatnonzero(mask.any(axis=1))
     cols = np.flatnonzero(mask.any(axis=0))
-    return BBox(int(cols[0]), int(rows[0]), int(cols[-1]) + 1, int(rows[-1]) + 1)
+    bbox = BBox(int(cols[0]), int(rows[0]), int(cols[-1]) + 1, int(rows[-1]) + 1)
+
+    if bbox.width == img.width and bbox.height == img.height:
+        if (fallback := opaque_subject_bbox(img)) is not None:
+            return fallback
+    return bbox
 
 
 def normalize(
