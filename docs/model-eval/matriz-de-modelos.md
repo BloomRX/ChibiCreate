@@ -342,3 +342,58 @@ Q4_0 nao e baixado e nao ha fallback automatico para ele: reset do runtime e
 escolha no dropdown. O recipe nasce `approval_status: experimental`. Uma
 execucao nao afirma determinismo. **Nenhum vencedor e escolhido por metrica
 automatica** — a avaliacao dos tres eixos e humana.
+
+## Travamento nas celulas 3 e 9: RAM, nao VRAM
+
+Sintoma: as celulas 3 e 9 **travavam** (nao davam erro) no Colab T4.
+
+Causa raiz: o preflight media disco e VRAM, mas **ignorava a RAM**. No T4:
+
+| recurso | disponivel | exigido Q3_K_M | veredito |
+|---|---|---|---|
+| disco | 65.3 GB | 25 GB | cabe |
+| VRAM | 14.6 GB | 10 GB | cabe |
+| **RAM** | **12.7 GB** | **16 GB** | **NAO cabe** |
+
+Como disco e VRAM cabiam, o preflight dizia `READY` e a execucao seguia ate
+travar. E o requisito de RAM nao e um detalhe do GGUF: **e a razao de ele
+existir**. A economia de VRAM do Q3_K_M vem de manter o text encoder (9.38
+GB) e o VAE na RAM do sistema, e o `--lowvram` reforca isso movendo pesos da
+VRAM para a RAM. Com 12.7 GB o processo entra em swap.
+
+**Por que travou em vez de dar erro:** falta de VRAM levanta
+`CUDA out of memory`; falta de RAM nao levanta nada — o kernel pagina para
+disco e tudo congela. Comportamento confirmado em relatos de usuarios de
+ComfyUI com Qwen GGUF: `--lowvram` sobe o consumo de RAM e derruba a sessao
+quando ela acaba.
+
+Os dois travamentos tinham gatilhos diferentes:
+
+- **celula 3**: `nvidia-smi` via `subprocess.run` **sem timeout**. Com o
+  runtime ja em swap, a chamada nunca retornava e a celula ficava pendurada
+  sem imprimir nada. Todas as chamadas externas dos notebooks passaram a ter
+  timeout.
+- **celula 9**: a inferencia real, sem nenhum sinal de vida. Uma execucao
+  lenta era indistinguivel de um travamento. A celula agora imprime a cada
+  20 s a fila do ComfyUI e a VRAM livre.
+
+### Correcoes
+
+1. `preflight()` recebe `available_ram_gb` e tem um terceiro veredito,
+   `BLOCKED — insufficient RAM`. RAM desconhecida nao vira `READY`.
+2. Timeout em todas as chamadas de rede/subprocesso dos dois notebooks.
+3. Monitor de progresso na celula de execucao.
+4. `ram_gb: 16` marcado com `ram_estimated: true` e `[TEST REQUIRED]`: e
+   valor conservador nosso, nao medicao.
+
+### Consequencia: Qwen Q3_K_M fica BLOCKED no T4
+
+    LongCat ........... BLOCKED - insufficient VRAM
+    Z-Image ........... BLOCKED - insufficient VRAM
+    Qwen Q3_K_M ....... BLOCKED - insufficient RAM   (era READY, errado)
+    Qwen Q4_0 ......... BLOCKED - insufficient RAM
+    Pony .............. READY  (research_only)
+
+Nenhum requisito foi reduzido para caber, e nenhum fallback automatico foi
+adicionado. **A escolha do proximo passo e humana** — ver o relatorio ao
+usuario.

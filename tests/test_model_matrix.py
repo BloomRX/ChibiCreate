@@ -147,13 +147,13 @@ def test_preflight_desconhecido_nunca_vira_ready():
 
 
 def test_preflight_ready_quando_cabe():
-    pf = mr.preflight("pony_diffusion_v6_xl", 500, 40)
+    pf = mr.preflight("pony_diffusion_v6_xl", 500, 40, available_ram_gb=64)
     assert pf.ready and pf.status == mr.READY
     assert "READY" in pf.report()
 
 
 def test_preflight_avisa_quantizacao_de_terceiro_e_custom_node():
-    pf = mr.preflight("qwen_edit_2511_q3_k_m", 500, 40)
+    pf = mr.preflight("qwen_edit_2511_q3_k_m", 500, 40, available_ram_gb=64)
     avisos = " ".join(pf.warnings)
     assert "terceiro" in avisos
     assert "ComfyUI-GGUF" in avisos
@@ -783,16 +783,25 @@ def test_longcat_bloqueado_num_t4_de_15gb():
     pode ser reduzido artificialmente para caber.
     """
     pf = mr.preflight("longcat_image_edit",
-                      available_disk_gb=65.3, available_vram_gb=14.6)
+                      available_disk_gb=65.3, available_vram_gb=14.6,
+                      available_ram_gb=12.7)
     assert pf.status == mr.BLOCKED_VRAM, pf.status
     assert not pf.ready
     assert mr.get_model("longcat_image_edit")["vram_gb"] >= 18, (
         "requisito do LongCat foi reduzido para caber no T4")
 
-    # O Qwen Q3, menor, passa no mesmo runtime.
+    # O Qwen Q3 cabe na VRAM do T4 (10 < 14.6), mas NAO na RAM (16 > 12.7).
+    # Antes o preflight ignorava RAM e dizia READY; a execucao entao travava.
     q3 = mr.preflight("qwen_edit_2511_q3_k_m",
-                      available_disk_gb=65.3, available_vram_gb=14.6)
-    assert q3.ready, q3.report()
+                      available_disk_gb=65.3, available_vram_gb=14.6,
+                      available_ram_gb=12.7)
+    assert q3.status == mr.BLOCKED_RAM, q3.report()
+    # Com RAM suficiente, o mesmo modelo passa: o bloqueio e da RAM, nao
+    # um requisito inflado.
+    folgado = mr.preflight("qwen_edit_2511_q3_k_m",
+                           available_disk_gb=65.3, available_vram_gb=14.6,
+                           available_ram_gb=32)
+    assert folgado.ready, folgado.report()
 
 
 
@@ -1042,6 +1051,70 @@ def test_notebook_nao_passa_nome_solto_como_referencia():
     cel = next(c for c in celulas if "DESEJADAS" in c)
     assert "REF_DIR / n" in cel, (
         "referencia precisa ser caminho completo, nao nome solto")
+
+
+
+def test_preflight_bloqueia_por_ram_no_t4_do_colab():
+    """RAM de menos com GGUF nao da erro: da swap e TRAVA a sessao.
+
+    Cenario real medido no Colab: T4, 65.3 GB de disco, 14.6 GB de VRAM
+    livre e 12.7 GB de RAM. Disco e VRAM cabem, entao o preflight dizia
+    READY — e a execucao pendurava. RAM tem de ser a terceira dimensao.
+    """
+    pf = mr.preflight("qwen_edit_2511_q3_k_m",
+                      available_disk_gb=65.3, available_vram_gb=14.6,
+                      available_ram_gb=12.7)
+    assert pf.status == mr.BLOCKED_RAM, pf.status
+    assert not pf.ready
+    assert any("RAM" in r for r in pf.reasons)
+    assert any("SWAP" in r or "swap" in r for r in pf.reasons), (
+        "precisa explicar que o sintoma e travamento, nao erro")
+
+
+def test_preflight_ram_desconhecida_nunca_vira_ready():
+    pf = mr.preflight("qwen_edit_2511_q3_k_m", 999, 99,
+                      available_ram_gb=None)
+    assert not pf.ready
+
+
+def test_requisito_de_ram_marcado_como_estimado():
+    """16 GB e valor conservador nosso, nao medicao. Nao pode passar por
+    fato verificado."""
+    for key in ("qwen_edit_2511_q3_k_m", "qwen_edit_2511_q4_0"):
+        m = mr.get_model(key)
+        assert m["ram_estimated"] is True
+        assert "TEST REQUIRED" in m["ram_note"]
+
+
+def test_celula_de_preflight_mede_e_repassa_a_ram():
+    _, _, celulas = _nb(NB1)
+    cel = next(c for c in celulas if "mr.preflight(" in c)
+    assert "available_ram_gb=RAM_GB" in cel, (
+        "preflight sem RAM foi o que deu READY num runtime que trava")
+    assert "RAM_GB" in cel and "virtual_memory" in cel
+
+
+def test_chamadas_de_rede_do_notebook_tem_timeout():
+    """Chamada sem timeout pendura a celula para sempre, sem mensagem."""
+    import re as _re
+    for nb_path in (NB1, NB2):
+        _, _, celulas = _nb(nb_path)
+        for c in celulas:
+            for chamada in _re.findall(r"urlopen\((?:[^()]|\([^()]*\))*\)", c):
+                assert "timeout=" in chamada, (
+                    f"{nb_path.name}: urlopen sem timeout -> {chamada[:60]}")
+        for c in celulas:
+            if "subprocess.run(" in c and "nvidia-smi" in c:
+                assert "timeout=" in c, "nvidia-smi sem timeout"
+
+
+def test_execucao_longa_mostra_sinal_de_vida():
+    """Sem progresso, execucao normal e indistinguivel de travamento."""
+    _, _, celulas = _nb(NB1)
+    run = next(c for c in celulas if "mr.run_model(" in c)
+    assert "threading" in run and "/queue" in run, (
+        "celula 9 precisa reportar progresso durante a inferencia")
+    assert "finally" in run, "o monitor tem de parar mesmo se a run falhar"
 
 
 if __name__ == "__main__":

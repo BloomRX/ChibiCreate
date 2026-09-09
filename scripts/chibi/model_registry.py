@@ -37,6 +37,7 @@ STAGE_FLUX_REFINER = "flux_to_model"
 READY = "READY"
 BLOCKED_DISK = "BLOCKED — insufficient disk"
 BLOCKED_VRAM = "BLOCKED — insufficient VRAM"
+BLOCKED_RAM = "BLOCKED — insufficient RAM"
 
 
 def load_registry(path: Path | None = None) -> dict[str, Any]:
@@ -240,6 +241,7 @@ def preflight(
     available_vram_gb: float | None,
     registry: dict[str, Any] | None = None,
     vram_margin_gb: float = 0.5,
+    available_ram_gb: float | None = None,
 ) -> Preflight:
     """Decide READY / BLOCKED ANTES de qualquer download pesado.
 
@@ -254,6 +256,7 @@ def preflight(
     m = get_model(key, registry)
     disco = float(m["disk_gb"])
     vram = float(m["vram_gb"])
+    ram = float(m.get("ram_gb") or 0)
 
     razoes: list[str] = []
     avisos: list[str] = []
@@ -302,6 +305,27 @@ def preflight(
             f"({available_vram_gb:.1f} disponivel, {vram:.1f} necessario).")
         razoes.append("Troque para um runtime com GPU maior "
                       "(Colab: Runtime > Change runtime type).")
+
+    # RAM: o preflight ignorava isso e por isso dava READY para um runtime
+    # onde o modelo TRAVA. Num GGUF o text encoder e o VAE sao carregados na
+    # RAM do sistema (e disso que vem a economia de VRAM), entao RAM de menos
+    # nao da erro: o processo entra em swap e a sessao congela — que foi
+    # exatamente o sintoma observado. Sem excecao para o T4.
+    if ram:
+        if available_ram_gb is None:
+            if status == READY:
+                status = BLOCKED_RAM
+            razoes.append("RAM desconhecida — nao prossigo as cegas.")
+        elif available_ram_gb < ram:
+            if status == READY:
+                status = BLOCKED_RAM
+            falta = ram - available_ram_gb
+            razoes.append(
+                f"Faltam ~{falta:.1f} GB de RAM "
+                f"({available_ram_gb:.1f} disponivel, {ram:.1f} necessario).")
+            razoes.append(
+                "RAM insuficiente com GGUF nao gera erro: gera SWAP e "
+                "travamento silencioso da sessao.")
 
     if status == READY:
         razoes.append("Requisitos declarados cabem no runtime atual.")

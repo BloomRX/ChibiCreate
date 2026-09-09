@@ -235,6 +235,16 @@ models:
       9.92 (GGUF) + 9.38 (text encoder) + 0.25 (VAE). Tamanhos lidos da
       arvore de arquivos dos repos.
     vram_gb: 10.0
+    ram_estimated: true
+    ram_note: >-
+      NAO medido por nos. Num GGUF o text encoder (9.38 GB) e o VAE ficam na
+      RAM do sistema: e dai que vem a economia de VRAM. 16 GB e o valor
+      conservador para caber encoder + processo do ComfyUI + kernel.
+      IMPORTANTE: o Colab T4 tem ~12.7 GB de RAM, abaixo disso. RAM
+      insuficiente com GGUF nao levanta erro — o processo entra em swap e a
+      sessao TRAVA em silencio, que foi o sintoma observado na celula 9.
+      [TEST REQUIRED] confirmar o consumo real de RAM antes de baixar o
+      valor exigido.
     vram_estimated: true
     vram_note: >-
       ~10 GB assumindo text encoder e VAE descarregados para a RAM do
@@ -324,6 +334,16 @@ models:
       11.04 (GGUF) + 9.38 (text encoder) + 0.25 (VAE). Tamanhos lidos da
       arvore de arquivos dos repos.
     vram_gb: 13.0
+    ram_estimated: true
+    ram_note: >-
+      NAO medido por nos. Num GGUF o text encoder (9.38 GB) e o VAE ficam na
+      RAM do sistema: e dai que vem a economia de VRAM. 16 GB e o valor
+      conservador para caber encoder + processo do ComfyUI + kernel.
+      IMPORTANTE: o Colab T4 tem ~12.7 GB de RAM, abaixo disso. RAM
+      insuficiente com GGUF nao levanta erro — o processo entra em swap e a
+      sessao TRAVA em silencio, que foi o sintoma observado na celula 9.
+      [TEST REQUIRED] confirmar o consumo real de RAM antes de baixar o
+      valor exigido.
     vram_estimated: true
     vram_note: "Assume text encoder e VAE em RAM do sistema."
     disk_gb: 28.0
