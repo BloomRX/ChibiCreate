@@ -348,6 +348,37 @@ def build_recipe(
     }
 
 
+def _prune_unused_image_slots(workflow: dict, n_extra: int) -> dict:
+    """Remove LoadImage/entradas de referencia que nao serao preenchidas.
+
+    O workflow multi-referencia declara o maximo de slots. Quando a execucao
+    usa menos, os placeholders restantes ficariam sem valor e o grafo seria
+    invalido. Poda-los mantem o grafo executado igual ao experimento
+    declarado — nada de imagem placeholder para "preencher buraco".
+    """
+    import copy
+    import json as _json
+
+    wf = copy.deepcopy(workflow)
+    for i in range(n_extra + 2, 12):
+        token = f"%%INPUT_IMAGE_{i}%%"
+        if token not in _json.dumps(wf):
+            continue
+        alvo = [k for k, v in wf.items()
+                if isinstance(v, dict)
+                and v.get("inputs", {}).get("image") == token]
+        for nid in alvo:
+            del wf[nid]
+            for v in wf.values():
+                if not isinstance(v, dict):
+                    continue
+                for campo, ligacao in list(v.get("inputs", {}).items()):
+                    if (isinstance(ligacao, list) and len(ligacao) == 2
+                            and ligacao[0] == nid):
+                        del v["inputs"][campo]
+    return wf
+
+
 def pixel_sha256(path: Path) -> str | None:
     """Hash dos PIXELS, nao do arquivo.
 
@@ -518,6 +549,12 @@ def run_qwen_edit(
         dst = run_dir / f"input_{i}{rp.suffix}"
         shutil.copy2(rp, dst)
         local_extras.append(dst)
+
+    # Slots de referencia nao usados sao PODADOS do grafo. Sem isso, o teste
+    # A (1 imagem) e o B (2 imagens) quebrariam num workflow que declara 3
+    # slots. Podar e mais honesto que mandar imagem falsa: o grafo executado
+    # passa a refletir exatamente as referencias que existem.
+    workflow = _prune_unused_image_slots(workflow, len(extra_paths))
 
     resolved = resolve_workflow(workflow, values)
     (run_dir / "workflow.resolved.json").write_text(

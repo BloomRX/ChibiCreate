@@ -1474,6 +1474,119 @@ def test_recipe_has_no_credentials():
     assert "user" not in redigida or "***" in redigida
 
 
+
+def test_unused_image_slots_are_pruned_not_faked():
+    """Menos referencias => grafo menor, nunca imagem placeholder.
+
+    O workflow multi-ref declara 3 slots. Os testes A (1 imagem) e B (2)
+    usariam menos. Preencher o buraco com uma imagem qualquer contaminaria o
+    experimento; deixar o placeholder cru quebraria o grafo. A poda mantem o
+    grafo executado igual ao experimento declarado.
+    """
+    import json
+
+    from chibi.experiment import _prune_unused_image_slots, load_workflow
+
+    wf = load_workflow("experimental/qwen_edit_multiref", "v1")
+
+    for n_extra, esperado in [(0, 1), (1, 2), (2, 3)]:
+        podado = _prune_unused_image_slots(wf, n_extra)
+        nodes = {k: v for k, v in podado.items() if not k.startswith("_")}
+        loads = [k for k, v in nodes.items() if v["class_type"] == "LoadImage"]
+        assert len(loads) == esperado, (
+            f"{n_extra} refs extras => esperava {esperado} LoadImage, "
+            f"achei {len(loads)}"
+        )
+
+        texto = json.dumps(podado)
+        for i in range(n_extra + 2, 12):
+            assert f"%%INPUT_IMAGE_{i}%%" not in texto, (
+                f"placeholder INPUT_IMAGE_{i} sobrou sem valor"
+            )
+
+        # Nenhuma ligacao pode apontar para no removido.
+        enc = next(v for v in nodes.values()
+                   if v["class_type"] == "TextEncodeQwenImageEditPlus"
+                   and "image1" in v["inputs"])
+        for campo, lig in enc["inputs"].items():
+            if isinstance(lig, list) and len(lig) == 2 and isinstance(lig[0], str):
+                assert lig[0] in nodes, f"{campo} aponta para no removido {lig[0]}"
+
+        # image1 nunca some: e a imagem que sera editada.
+        assert "image1" in enc["inputs"]
+
+
+def test_primary_image_role_distinguishes_stage1_output():
+    """Rotular a saida do FLUX como 'full_body' inverteria a leitura.
+
+    O teste A edita o original; B e C editam a saida do FLUX. Se o recipe
+    nao distinguir, a analise nao consegue separar os tres casos.
+    """
+    import tempfile
+
+    from chibi import experiment
+
+    with tempfile.TemporaryDirectory() as td:
+        falso = Path(td) / "output.png"
+        from PIL import Image
+        Image.new("RGBA", (16, 16), (0, 0, 0, 255)).save(falso)
+
+        res = experiment.run_qwen_edit(
+            "waifu_001",
+            input_rel=str(falso),
+            prompt="x",
+            model_key="qwen_image_edit_2511",
+            workflow_name="experimental/qwen_edit_multiref",
+            dry_run=True,
+        )
+        import json as _json
+        rec = _json.loads((res.run_dir / "recipe.json").read_text())
+        assert rec["primary_image_role"] == "stage1_output", rec.get(
+            "primary_image_role"
+        )
+        shutil.rmtree(res.run_dir.parent.parent, ignore_errors=True)
+
+    res = experiment.run_qwen_edit(
+        "waifu_001",
+        input_rel="reference/full_body.png",
+        prompt="x",
+        model_key="qwen_image_edit_2511",
+        workflow_name="experimental/qwen_edit_multiref",
+        dry_run=True,
+    )
+    import json as _json
+    rec = _json.loads((res.run_dir / "recipe.json").read_text())
+    assert rec["primary_image_role"] == "full_body", rec.get("primary_image_role")
+    shutil.rmtree(res.run_dir.parent.parent, ignore_errors=True)
+
+
+def test_flux_to_qwen_notebook_is_executable_as_written():
+    """O notebook precisa bater com a CLI real, nao com uma CLI imaginada."""
+    import json
+
+    nb = json.loads(
+        (ROOT / "notebooks" / "model_eval_flux_to_qwen.ipynb")
+        .read_text(encoding="utf-8")
+    )
+    src = "\n".join("".join(c["source"]) for c in nb["cells"])
+
+    # Flags que o notebook usa precisam existir de fato na CLI.
+    cli = (ROOT / "scripts" / "chibi" / "cli.py").read_text(encoding="utf-8")
+    for flag in ("--ref", "--denoise", "--input", "--model"):
+        assert flag in src, f"notebook nao usa {flag}"
+        assert flag.lstrip("-") in cli, f"CLI nao tem {flag}"
+
+    assert "qwen-refiner" in src
+    assert "arena/01a07ece-chibicreate" in src, "branch errada no clone"
+    assert "run_001/output.png" in src, "nao ancora no run_001 do FLUX"
+    assert "BASELINE_HYPOTHESIS" in src, "denoise sem marcar hipotese"
+
+    # Nao pode rodar o FLUX de novo nem pedir credencial.
+    assert "flux2-klein" not in src, "notebook executaria o FLUX outra vez"
+    for segredo in ("CHIBI_COMFY_TOKEN", "hf_token", "password"):
+        assert segredo not in src, f"notebook pede credencial: {segredo}"
+
+
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
