@@ -1,0 +1,379 @@
+# Registry central da matriz de avaliacao de modelos (FASE 3B).
+#
+# ESTE ARQUIVO E A UNICA FONTE DA VERDADE dos dois notebooks:
+#   notebooks/model_eval_model_only.ipynb    (Original -> Modelo)
+#   notebooks/model_eval_flux_refiner.ipynb  (FLUX run_003 -> Modelo)
+#
+# Regra: nenhum condicional de modelo espalhado pelos notebooks. Se algo
+# muda entre modelos, muda AQUI.
+#
+# AVISO SOBRE HASHES: sha256 de pesos so e preenchido depois de baixar e
+# conferir de fato. Onde nao houve download, o campo fica `null` com
+# `hash_verified: false`. Nao inventamos hash.
+#
+# AVISO SOBRE TAMANHOS: `download_gb` e `vram_gb` marcados
+# `estimated: true` vem de documentacao/model card, NAO de medicao nossa.
+# O preflight compara contra eles, mas eles nao sao medida do agente.
+
+schema_version: 1
+
+# Prompt comum a toda a matriz. Override por modelo em `prompt_override`.
+base_prompt: >-
+  Preserve the exact same character identity, face, hair, eyes, horns, body
+  proportions, color palette, and overall chibi style from the input image.
+  Preserve the original character design shown in the reference images,
+  especially the clothing, cape, golden ornaments, accessories, and their
+  shapes and placement. Do not redesign, replace, modernize, sexualize,
+  simplify away, or invent clothing elements. Redraw the character as a clean
+  polished game/gacha chibi character while keeping the original outfit design
+  recognizable and faithful to the references. Only make changes necessary to
+  adapt the original design naturally to the chibi proportions. Full body,
+  front-facing, clean silhouette, consistent lineart, polished game art, soft
+  shading, highly readable at small size. The output should look like the same
+  original character converted into chibi form, not a new character inspired
+  by the original.
+
+# Sem negative prompt automatico, por instrucao. Um modelo so ganha negative
+# se a documentacao dele exigir, e ai fica registrado como override.
+base_negative_prompt: ""
+
+character: waifu_001
+
+# Eixos de avaliacao. OVERALL nao existe aqui de proposito: nao ha formula.
+evaluation_axes: [STYLE, IDENTITY, DESIGN_PRESERVATION]
+primary_axis: DESIGN_PRESERVATION
+
+# Itens que a analise visual deve cobrir explicitamente.
+inspection_checklist:
+  - roupa
+  - capa
+  - ornamentos
+  - acessorios
+  - chifres
+  - cabelo
+  - rosto
+  - silhueta
+  - proporcoes_chibi
+  - preservacao_de_cores
+  - detalhes_inventados_ou_removidos
+
+models:
+
+  # ------------------------------------------------------------------
+  longcat_image_edit:
+    label: "LongCat-Image-Edit"
+    repo: meituan-longcat/LongCat-Image-Edit
+    revision: null                 # nao fixada: nao baixamos para conferir
+    revision_verified: false
+    params: "6B (transformer) + Qwen2.5-VL-7B como text encoder"
+    pipeline_type: instruction_edit_single_image
+    input_mode: image_plus_instruction
+
+    # CAPACIDADE REAL, nao desejada. O card oficial documenta UMA imagem de
+    # entrada. Multi-image foi declarado "prioridade da proxima versao" pelos
+    # autores, ou seja: nao existe hoje.
+    references_supported: 0
+    reference_limitation: >-
+      Aceita apenas UMA imagem. Nao ha slot para referencias de design
+      adicionais. No Notebook 2 a imagem editada e a saida do FLUX e
+      full_body/outfit NAO entram — a limitacao e registrada no recipe, nunca
+      contornada em silencio.
+
+    parameters:
+      steps: 50
+      cfg: 4.5
+      sampler: default_pipeline
+      scheduler: default_pipeline
+      denoise: null                # editor por instrucao: nao expoe denoise
+      resolution: [1024, 1024]
+      batch: 1
+      resolution_note: "O codigo oficial suporta ~1MP."
+
+    download_gb: 24.0
+    download_estimated: true
+    vram_gb: 18.0
+    vram_estimated: true
+    vram_note: >-
+      ~18 GB exigem enable_model_cpu_offload() conforme o card oficial. Sem
+      offload o requisito e maior. Nao medimos.
+    disk_gb: 30.0
+    ram_gb: 16.0
+
+    license: apache-2.0
+    license_source: "model card oficial HF (meituan-longcat/LongCat-Image-Edit)"
+    license_verified: true
+    commercial_status: verified
+    third_party_quantization: false
+
+    status: CANDIDATE
+    notes: >-
+      Nao assumir que e leve por ser 6B: o text encoder Qwen2.5-VL-7B entra
+      por cima. Preflight real obrigatorio.
+
+  # ------------------------------------------------------------------
+  z_image_turbo:
+    label: "Z-Image Turbo"
+    repo: Tongyi-MAI/Z-Image-Turbo
+    revision: null
+    revision_verified: false
+    params: "6B S3-DiT"
+
+    # PONTO CRITICO DE HONESTIDADE: Z-Image Turbo e TEXT-TO-IMAGE. Nao e
+    # editor por instrucao e nao tem slot de referencia. Z-Image-Edit foi
+    # anunciado mas nao lancado. Usar via img2img latente (VAEEncode +
+    # denoise < 1.0) e legitimo e foi autorizado explicitamente pelo
+    # usuario, mas NAO e edicao por instrucao e nao preserva design da
+    # mesma forma. Nao vamos fingir o contrario.
+    pipeline_type: text_to_image_with_img2img_latent
+    input_mode: img2img_latent
+    references_supported: 0
+    reference_limitation: >-
+      NAO e um editor multi-reference. E um gerador text-to-image usado em
+      modo img2img (VAEEncode + denoise). Nao existe slot para full_body nem
+      outfit: o unico condicionamento visual e a propria imagem de entrada,
+      via latente. A fidelidade ao design depende inteiramente do denoise.
+    capability_warning: >-
+      Z-Image-Edit foi anunciado pela Tongyi-MAI mas nao lancado ate a data
+      deste registry. Qualquer resultado aqui mede img2img, nao edicao.
+
+    parameters:
+      steps: 8
+      cfg: 1.0
+      sampler: euler
+      scheduler: simple
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+      cfg_note: >-
+        Turbo e destilado para poucos passos; o card usa guidance baixo.
+        cfg 4.5 e 50 steps sao do Z-Image BASE, nao do Turbo.
+
+    download_gb: 14.0
+    download_estimated: true
+    vram_gb: 16.0
+    vram_estimated: true
+    disk_gb: 20.0
+    ram_gb: 12.0
+
+    license: apache-2.0
+    license_source: "model card oficial HF (Tongyi-MAI) + repo GitHub"
+    license_verified: true
+    commercial_status: verified
+    third_party_quantization: false
+
+    status: CANDIDATE
+    notes: >-
+      No Notebook 2 so faz sentido como img2img da saida do FLUX. Registrar
+      exatamente essa limitacao no recipe.
+
+  # ------------------------------------------------------------------
+  qwen_edit_2511_q3_k_m:
+    label: "Qwen-Image-Edit-2511 Q3_K_M"
+    repo: unsloth/Qwen-Image-Edit-2511-GGUF
+    file: Qwen-Image-Edit-2511-Q3_K_M.gguf
+    revision: null
+    revision_verified: false
+    base_model: Qwen/Qwen-Image-Edit-2511
+    base_model_revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    params: "20B (quantizado)"
+    pipeline_type: instruction_edit_multi_image
+    input_mode: image_plus_instruction
+
+    # TextEncodeQwenImageEditPlus (Core) aceita image1/image2/image3.
+    # A principal ocupa image1 => sobram 2 slots de referencia.
+    references_supported: 2
+    reference_limitation: >-
+      3 imagens no total (node Core). A principal ocupa image1, sobrando 2
+      slots. face.png fica de fora quando full_body e outfit sao usados.
+
+    # BLOQUEIO DECLARADO: GGUF exige custom node de terceiro.
+    requires_custom_node: ComfyUI-GGUF
+    custom_node_repo: https://github.com/city96/ComfyUI-GGUF
+    custom_node_ack_required: true
+    custom_node_note: >-
+      A regra do projeto proibe instalar custom nodes arbitrariamente e pegar
+      quantizacao comunitaria sem reportar. Q3_K_M/Q4_0 NAO existem em versao
+      oficial: sao quantizacoes de terceiro e so carregam via UnetLoaderGGUF
+      do custom node ComfyUI-GGUF. O notebook exige aceite EXPLICITO do
+      usuario antes de instalar qualquer coisa.
+
+    parameters:
+      steps: 20
+      cfg: 2.5
+      sampler: euler
+      scheduler: simple
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+
+    # ~9.8 GB de pesos + text encoder ~8 GB + VAE ~0.25 GB.
+    download_gb: 18.5
+    download_estimated: true
+    vram_gb: 10.0
+    vram_estimated: true
+    vram_note: >-
+      ~10 GB assumindo text encoder e VAE descarregados para a RAM do
+      sistema. Com tudo em VRAM o requisito sobe.
+    disk_gb: 25.0
+    ram_gb: 16.0
+
+    # DUAS licencas distintas: a do modelo-base e a da quantizacao.
+    license: apache-2.0
+    license_source: "Qwen/Qwen-Image-Edit-2511 (modelo-base), Apache 2.0"
+    license_verified: true
+    quantization_license: apache-2.0
+    quantization_license_source: >-
+      Card do unsloth/Qwen-Image-Edit-2511-GGUF declara Apache 2.0, herdada
+      do modelo-base. Nao confirmamos revision nem hash dos arquivos.
+    quantization_license_verified: false
+    quantization_author: unsloth
+    third_party_quantization: true
+    commercial_status: pending_human_review
+    commercial_status_reason: >-
+      O modelo-base e Apache 2.0 e comercialmente claro. A VARIANTE
+      quantizada e redistribuicao de terceiro, sem revision/hash conferidos
+      por nos. Separar as duas licencas e obrigatorio; nao marcar
+      commercial=true automaticamente.
+
+    status: CANDIDATE
+    try_first: true
+    notes: >-
+      Menor variante registrada: comecar por ela. Se funcionar, NAO baixar Q4
+      automaticamente — o usuario reseta o Colab e escolhe Q4 no dropdown.
+
+  # ------------------------------------------------------------------
+  qwen_edit_2511_q4_0:
+    label: "Qwen-Image-Edit-2511 Q4_0"
+    repo: unsloth/Qwen-Image-Edit-2511-GGUF
+    file: Qwen-Image-Edit-2511-Q4_0.gguf
+    revision: null
+    revision_verified: false
+    base_model: Qwen/Qwen-Image-Edit-2511
+    base_model_revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    params: "20B (quantizado)"
+    pipeline_type: instruction_edit_multi_image
+    input_mode: image_plus_instruction
+    references_supported: 2
+    reference_limitation: >-
+      3 imagens no total (node Core). A principal ocupa image1, sobrando 2
+      slots. face.png fica de fora quando full_body e outfit sao usados.
+
+    requires_custom_node: ComfyUI-GGUF
+    custom_node_repo: https://github.com/city96/ComfyUI-GGUF
+    custom_node_ack_required: true
+    custom_node_note: >-
+      Mesma condicao do Q3_K_M: quantizacao de terceiro, carregada por custom
+      node. Exige aceite explicito.
+
+    parameters:
+      steps: 20
+      cfg: 2.5
+      sampler: euler
+      scheduler: simple
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+
+    download_gb: 21.5
+    download_estimated: true
+    vram_gb: 13.0
+    vram_estimated: true
+    vram_note: "Assume text encoder e VAE em RAM do sistema."
+    disk_gb: 28.0
+    ram_gb: 16.0
+
+    license: apache-2.0
+    license_source: "Qwen/Qwen-Image-Edit-2511 (modelo-base), Apache 2.0"
+    license_verified: true
+    quantization_license: apache-2.0
+    quantization_license_source: >-
+      Card do unsloth/Qwen-Image-Edit-2511-GGUF declara Apache 2.0, herdada
+      do modelo-base. Nao confirmamos revision nem hash dos arquivos.
+    quantization_license_verified: false
+    quantization_author: unsloth
+    third_party_quantization: true
+    commercial_status: pending_human_review
+    commercial_status_reason: >-
+      Igual ao Q3_K_M: base Apache 2.0, variante quantizada de terceiro sem
+      hash conferido.
+
+    status: CANDIDATE
+    try_first: false
+    notes: "Rodar apenas depois do Q3_K_M, em sessao separada."
+
+  # ------------------------------------------------------------------
+  pony_diffusion_v6_xl:
+    label: "Pony Diffusion V6 XL (research only)"
+    repo: LyliaEngine/Pony_Diffusion_V6_XL
+    revision: null
+    revision_verified: false
+    base_model: stabilityai/stable-diffusion-xl-base-1.0
+    params: "~2.6B (UNet SDXL finetune)"
+
+    # SDXL nao e editor por instrucao. Sem ControlNet/IP-Adapter (ambos fora
+    # de escopo por instrucao), o unico modo com imagem e img2img latente.
+    pipeline_type: sdxl_checkpoint_img2img
+    input_mode: img2img_latent
+    references_supported: 0
+    reference_limitation: >-
+      Checkpoint SDXL: nao aceita referencia de imagem sem IP-Adapter ou
+      ControlNet, ambos fora de escopo por instrucao. Unico modo disponivel e
+      img2img latente. Nao preserva design por referencia.
+
+    parameters:
+      steps: 25
+      cfg: 7.0
+      sampler: euler_ancestral
+      scheduler: normal
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+
+    # Pony exige as score tags; sem elas a saida degrada. Isso e exigencia
+    # documentada do proprio modelo, entao entra como override registrado.
+    prompt_override_prefix: "score_9, score_8_up, score_7_up, score_6_up, "
+    prompt_override_reason: >-
+      As score tags sao exigencia documentada do Pony V6; sem elas a saida
+      degrada. Override registrado, nao invencao artistica.
+
+    download_gb: 7.0
+    download_estimated: true
+    vram_gb: 10.0
+    vram_estimated: true
+    disk_gb: 12.0
+    ram_gb: 12.0
+
+    license: faipl-1.0-sd-modified
+    license_name: "Fair AI Public License 1.0-SD (modificada)"
+    license_link: https://freedevproject.org/faipl-1.0-sd/
+    license_source: >-
+      Card do modelo e pagina do autor: "You are not permitted to run
+      inference of this model on websites or applications allowing any form
+      of monetization (paid inference, faster tiers, etc.). This applies to
+      any derivative models or model merges." Permissao comercial explicita
+      concedida apenas a CivitAI e Hugging Face; demais casos exigem contato
+      com contact@purplesmart.ai.
+    license_verified: true
+    license_conflict_note: >-
+      Ha fontes de terceiros afirmando "CreativeML OpenRAIL-M" e
+      "cdla-permissive-2.0" para este modelo. Divergem do texto de licenca do
+      proprio autor. Prevalece o texto do autor; a divergencia fica
+      registrada sem reinterpretacao.
+
+    commercial_status: research_only
+    commercial_banner: "Research only — not approved for commercial production"
+    excluded_from_commercial_ranking: true
+    commercial_status_reason: >-
+      A restricao do autor incide sobre INFERENCIA monetizada, nao apenas
+      sobre redistribuicao do checkpoint. Avaliacao tecnica e permitida;
+      entrar no pipeline comercial nao e. Um resultado do Pony nunca altera o
+      candidato comercial vencedor.
+
+    status: RESEARCH_ONLY
+    notes: >-
+      Aparece no dropdown de proposito — o usuario quer poder testar
+      tecnicamente. Nunca marcado como aprovado.
