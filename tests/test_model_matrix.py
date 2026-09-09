@@ -440,17 +440,87 @@ def test_notebooks_compilam_como_ipython():
             compile(tm.transform_cell(src), f"{nb.name}:{i}", "exec")
 
 
-def test_dropdown_aparece_no_inicio_dos_dois_notebooks():
-    for nb in (NB1, NB2):
-        data, src, celulas = _nb(nb)
-        assert "dropdown_options" in src, f"{nb.name} sem dropdown"
-        i_dd = next(i for i, c in enumerate(celulas)
-                    if "dropdown_options" in c)
-        codigo = [i for i, c in enumerate(data["cells"])
-                  if c["cell_type"] == "code"]
-        # O dropdown esta entre as primeiras celulas de codigo.
-        assert i_dd <= codigo[3], (
-            f"{nb.name}: dropdown tarde demais (celula {i_dd})")
+def test_celulas_sao_colab_forms_colapsaveis():
+    """Todas as celulas de codigo usam #@title + cellView form.
+
+    O usuario quer ver so o log e os controles, com o codigo colapsado.
+    """
+    for nb_path in (NB1, NB2):
+        data, _, _ = _nb(nb_path)
+        for i, c in enumerate(data["cells"]):
+            if c["cell_type"] != "code":
+                continue
+            src = "".join(c["source"])
+            assert src.startswith("#@title "), (
+                f"{nb_path.name} c{i}: sem #@title (nao colapsa)")
+            assert c.get("metadata", {}).get("cellView") == "form", (
+                f"{nb_path.name} c{i}: sem cellView=form")
+
+
+def test_dropdown_e_form_nativo_do_colab():
+    """A selecao usa #@param com lista, nao ipywidgets."""
+    for nb_path in (NB1, NB2):
+        _, src, celulas = _nb(nb_path)
+        sel = next(c for c in celulas if "MODEL_KEY = mr.key_for_label" in c)
+        assert "modelo = " in sel and "#@param" in sel, (
+            f"{nb_path.name}: selecao nao e um #@param")
+        # ipywidgets nao pode voltar: exige clique e quebra Run All.
+        assert "ipywidgets" not in src, f"{nb_path.name} usa ipywidgets"
+        assert "MODEL_DROPDOWN" not in src
+        # seed tambem e um controle do form
+        assert "seed = " in sel and "type:'integer'" in sel
+
+
+def test_lista_do_dropdown_bate_com_o_registry():
+    """Colab forms exigem a lista literal no codigo.
+
+    Se alguem adicionar um modelo ao registry e esquecer do notebook, o
+    dropdown fica desatualizado em silencio. Este teste impede.
+    """
+    labels = mr.dropdown_options()
+    for nb_path in (NB1, NB2):
+        _, _, celulas = _nb(nb_path)
+        sel = next(c for c in celulas if "MODEL_KEY = mr.key_for_label" in c)
+        linha = next(l for l in sel.split("\n") if l.startswith("modelo = "))
+        for lab in labels:
+            assert repr(lab) in linha or f'"{lab}"' in linha, (
+                f"{nb_path.name}: {lab!r} falta no dropdown")
+        # e o default tem de ser um label valido
+        default = linha.split("=", 1)[1].split("#@param")[0].strip()
+        assert default.strip("'\"") in labels, f"default invalido: {default}"
+
+
+def test_autorizacao_de_download_e_um_checkbox_desmarcado():
+    for nb_path in (NB1, NB2):
+        _, _, celulas = _nb(nb_path)
+        cel = next(c for c in celulas if "autorizo_o_download" in c)
+        assert "autorizo_o_download = False #@param {type:'boolean'}" in cel, (
+            "a autorizacao precisa comecar DESMARCADA")
+        assert "SystemExit" in cel, "sem aceite explicito o notebook deve parar"
+
+
+def test_preflight_vem_antes_da_autorizacao_e_do_download():
+    """Ordem fisica das celulas: preflight -> autorizar -> baixar."""
+    for nb_path in (NB1, NB2):
+        data, _, _ = _nb(nb_path)
+        cod = [(i, "".join(c["source"])) for i, c in enumerate(data["cells"])
+               if c["cell_type"] == "code"]
+        i_pf = next(i for i, s in cod if "mr.preflight(" in s)
+        i_au = next(i for i, s in cod if "autorizo_o_download" in s)
+        i_dl = next(i for i, s in cod
+                    if "hf_hub_download" in s or "snapshot_download" in s)
+        assert i_pf < i_au < i_dl, (
+            f"{nb_path.name}: ordem errada pf={i_pf} auth={i_au} dl={i_dl}")
+
+
+def test_titulos_numerados_em_ordem_crescente():
+    import re
+    for nb_path in (NB1, NB2):
+        data, _, _ = _nb(nb_path)
+        nums = [int(re.match(r"#@title (\d+) ", "".join(c["source"])).group(1))
+                for c in data["cells"] if c["cell_type"] == "code"]
+        assert nums == list(range(1, len(nums) + 1)), (
+            f"{nb_path.name}: numeracao fora de ordem -> {nums}")
 
 
 def test_notebooks_usam_o_registry_e_nao_condicionais_por_modelo():
@@ -668,12 +738,21 @@ def test_preflight_checa_as_proprias_dependencias():
         assert "except" not in cel.split("def _gpu")[0].split("_faltando")[0]
 
 
-def test_run_all_funciona_sem_clique_no_dropdown():
-    """Run All nao clica no widget: precisa de selecao por indice."""
+def test_run_all_funciona_sem_interacao():
+    """Colab forms gravam o valor no proprio codigo.
+
+    Diferente de ipywidgets, o #@param nao exige clique: o valor default
+    fica no fonte, entao 'Runtime > Run all' funciona num runtime novo.
+    """
     for nb_path in (NB1, NB2):
-        _, src, _ = _nb(nb_path)
-        assert "MODEL_INDEX" in src, f"{nb_path.name} sem MODEL_INDEX"
-        assert "USE_WIDGET" in src, "sem fallback para ipywidgets ausente"
+        _, src, celulas = _nb(nb_path)
+        sel = next(c for c in celulas if "MODEL_KEY = mr.key_for_label" in c)
+        linha = next(l for l in sel.split("\n") if l.startswith("modelo = "))
+        # valor literal no fonte, nao leitura de widget
+        assert "#@param" in linha
+        assert ".value" not in sel, "ainda le valor de widget"
+        # nada que exija interacao para definir o modelo
+        assert "input(" not in src, f"{nb_path.name} pede input() interativo"
 
 
 def test_longcat_bloqueado_num_t4_de_15gb():

@@ -166,6 +166,26 @@ abrir notebook → dropdown → ficha do modelo → preflight → confirmar
     → exportar ZIP → cleanup → resetar → próximo modelo
 ```
 
+### Interface
+
+As células usam **Colab forms** (`#@title` + `#@param`): o código fica
+colapsado e você vê só os controles e o log. Para editar, duplo-clique na
+célula.
+
+| Célula | Controle |
+|---|---|
+| 1 · Setup | `forcar_reclone` (checkbox) |
+| 2 · Escolher modelo | `modelo` (**dropdown**), `seed` |
+| 3 · Preflight | — (só log) |
+| 4 · Autorizar download | `autorizo_o_download` (checkbox, começa desmarcado) |
+
+O dropdown é o widget nativo do Colab, então `Runtime > Run all` funciona sem
+clique: o valor escolhido fica gravado no próprio código.
+
+Colab forms exigem a lista de opções literal no fonte. Um teste
+(`test_lista_do_dropdown_bate_com_o_registry`) falha se alguém adicionar um
+modelo ao registry e esquecer de atualizar o dropdown.
+
 O cleanup remove `/content/models` e o cache do HF. **Nunca apaga
 `experiments/`** — há um teste garantindo isso. Ainda assim, exporte o ZIP
 antes de resetar: o disco do Colab não sobrevive ao reset.
