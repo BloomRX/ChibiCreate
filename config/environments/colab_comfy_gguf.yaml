@@ -1,0 +1,48 @@
+# Ambiente: colab_comfy_gguf
+#
+# FASE 3B / MATRIZ DE MODELOS — Notebook 1 (Original -> Modelo).
+# ComfyUI instalado DENTRO do runtime do Colab, servindo em localhost.
+# EXPERIMENTAL e TEMPORARIO: Colab nao e infraestrutura do projeto.
+#
+# Credenciais NUNCA neste arquivo. A URL vem de CHIBI_COMFY_URL, definida
+# pela celula que sobe o servidor.
+
+schema_version: 1
+
+name: colab_comfy_gguf
+kind: remote_gpu          # remoto do ponto de vista da CLI, ainda que local
+                          # ao runtime: o acesso e HTTP, igual ao cloud.yaml.
+
+comfyui:
+  enabled: true
+  base_url_env: CHIBI_COMFY_URL
+  token_env: CHIBI_COMFY_TOKEN
+  base_url: null
+  timeout_seconds: 1800   # GGUF em T4 com offload para RAM e lento
+  poll_interval_seconds: 2
+
+  # DELIBERADAMENTE VAZIO. Os nomes dos pesos dependem da quantizacao
+  # escolhida no dropdown, entao vem do config/model_eval_registry.yaml via
+  # `model_registry.comfy_model_files()` e sao passados como override.
+  # Fixar nomes aqui criaria uma segunda fonte da verdade que sairia do ar
+  # assim que o usuario trocasse Q3 por Q4.
+  models: {}
+
+# Sem bloco `sampling`: os parametros vem do registry, por modelo.
+
+capabilities:
+  gpu_inference: true
+  cpu_tools: false
+  rigging: false
+  godot: false
+
+requirements:
+  # Q3_K_M: ~10 GB de VRAM com text encoder e VAE descarregados para a RAM.
+  # Numero do model card de terceiros, nao medido por nos.
+  # [TEST REQUIRED]
+  min_vram_gb: 10
+  suggested_gpu: ["T4", "L4", "A100"]
+
+cost:
+  estimated_usd_per_hour: 0.0    # Colab: sem custo direto observavel
+  estimated_usd_per_character: null

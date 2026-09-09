@@ -1,0 +1,204 @@
+{
+  "_comment": [
+    "FASE 3B - NOTEBOOK 1: Original -> Qwen-Image-Edit-2511 GGUF.",
+    "Derivado de qwen_edit_multiref/v1. NAO substitui aquele workflow.",
+    "NAO e o Flow 02 e NAO produz Chibi Master.",
+    "",
+    "UNICA diferenca em relacao ao multiref: o node 1 e UnetLoaderGGUF, do",
+    "custom node ComfyUI-GGUF (city96). O UNETLoader core NAO le .gguf, e as",
+    "quantizacoes Q3_K_M/Q4_0 so existem em GGUF de terceiro. UnetLoaderGGUF",
+    "nao tem o campo weight_dtype: a precisao ja esta no arquivo.",
+    "",
+    "O text encoder continua no CLIPLoader core (safetensors fp8_scaled).",
+    "NAO trocar por CLIPLoaderGGUF: misturar fp8 scaled com loader GGUF da",
+    "'Mixing scaled FP8 with GGUF is not supported'. So se usaria o loader",
+    "GGUF com um text encoder GGUF + o mmproj correspondente, que nao e o",
+    "que este experimento baixa.",
+    "",
+    "Papel de cada slot (identico ao multiref):",
+    "  image1 = imagem principal a ser editada (aqui: o full_body ORIGINAL).",
+    "  image2/image3 = referencias de design, so condicionamento.",
+    "",
+    "[TEST REQUIRED] Validar com /object_info antes da primeira execucao."
+  ],
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Qwen-Image-Edit-2511 GGUF (ComfyUI-GGUF / city96)"
+    },
+    "inputs": {
+      "unet_name": "%%UNET_NAME%%"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Text encoder (Qwen2.5-VL)"
+    },
+    "inputs": {
+      "clip_name": "%%CLIP_NAME%%",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE"
+    },
+    "inputs": {
+      "vae_name": "%%VAE_NAME%%"
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Imagem principal a editar (saida do FLUX ou original)"
+    },
+    "inputs": {
+      "image": "%%INPUT_IMAGE%%",
+      "upload": "image"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Prompt positivo + referencia"
+    },
+    "inputs": {
+      "prompt": "%%PROMPT%%",
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "image1": [
+        "4",
+        0
+      ],
+      "image2": [
+        "11",
+        0
+      ],
+      "image3": [
+        "12",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Prompt negativo"
+    },
+    "inputs": {
+      "prompt": "%%NEGATIVE_PROMPT%%",
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sampler (denoise < 1.0 preserva a base)"
+    },
+    "inputs": {
+      "seed": "%%SEED%%",
+      "steps": "%%STEPS%%",
+      "cfg": "%%CFG%%",
+      "sampler_name": "%%SAMPLER%%",
+      "scheduler": "%%SCHEDULER%%",
+      "denoise": "%%DENOISE%%",
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "13",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode"
+    },
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "10": {
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Output"
+    },
+    "inputs": {
+      "images": [
+        "9",
+        0
+      ],
+      "filename_prefix": "%%OUTPUT_PREFIX%%"
+    }
+  },
+  "11": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Referencia de design 2"
+    },
+    "inputs": {
+      "image": "%%INPUT_IMAGE_2%%",
+      "upload": "image"
+    }
+  },
+  "12": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Referencia de design 3"
+    },
+    "inputs": {
+      "image": "%%INPUT_IMAGE_3%%",
+      "upload": "image"
+    }
+  },
+  "13": {
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "Latente inicial <- imagem principal"
+    },
+    "inputs": {
+      "pixels": [
+        "4",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  }
+}

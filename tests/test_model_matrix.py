@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import sys
+
+import yaml
 import tempfile
 from pathlib import Path
 
@@ -592,12 +594,20 @@ def test_notebooks_registram_metadata_completa():
     campos = ["seed", "steps", "cfg", "sampler", "scheduler", "denoise",
               "resolution", "batch", "prompt", "negative_prompt",
               "references", "execution_time"]
+    # O NB1 delega o recipe a experiment.build_recipe (runner do projeto);
+    # o NB2 ainda monta o dict na propria celula. Em ambos os casos os campos
+    # tem de existir na fonte que de fato escreve o recipe.
+    builder = (ROOT / "scripts/chibi/experiment.py").read_text(
+        encoding="utf-8")
     for nb in (NB1, NB2):
         _, src, _ = _nb(nb)
+        fonte = src + (builder if "mr.run_model(" in src else "")
         for c in campos:
-            assert c in src, f"{nb.name} nao registra {c}"
-        assert "artifact_sha256" in src and "pixel_sha256" in src, (
-            f"{nb.name} precisa dos dois hashes separados")
+            assert c in fonte, f"{nb.name} nao registra {c}"
+        assert "pixel_sha256" in fonte, (
+            f"{nb.name} precisa do hash de pixels")
+        assert ("artifact_sha256" in fonte or "output_sha256" in fonte), (
+            f"{nb.name} precisa do hash do arquivo, separado do de pixels")
 
 
 def test_notebooks_nao_vazam_secrets():
@@ -874,6 +884,129 @@ def test_celula_de_download_verifica_antes_de_baixar():
             if m.get("file"):
                 assert m["file"] not in cel, (
                     f"{nb_path.name}: {m['file']} hardcoded fora do registry")
+
+
+
+# ----------------------------------------------------------------------
+# Adapter de inferencia (Qwen GGUF via ComfyUI)
+# ----------------------------------------------------------------------
+
+def test_adapter_so_existe_para_quem_foi_implementado():
+    """Modelo sem adapter tem de ERRAR, nunca cair em outro modelo."""
+    for key in ("qwen_edit_2511_q3_k_m", "qwen_edit_2511_q4_0"):
+        ad = mr.adapter_for(key)
+        assert ad["runner"] == "qwen_edit"
+        assert ad["workflow"] == "experimental/qwen_edit_gguf"
+    for key in ("longcat_image_edit", "z_image_turbo",
+                "pony_diffusion_v6_xl"):
+        try:
+            mr.adapter_for(key)
+        except mr.AdapterIndisponivel as e:
+            assert "nao tem adapter" in str(e)
+        else:
+            raise AssertionError(f"{key} deveria estar sem adapter")
+
+
+def test_adapter_exige_o_node_gguf_e_o_encoder_multi_imagem():
+    ad = mr.adapter_for("qwen_edit_2511_q3_k_m")
+    assert "UnetLoaderGGUF" in ad["required_nodes"], (
+        "UNETLoader core nao le .gguf")
+    assert "TextEncodeQwenImageEditPlus" in ad["required_nodes"], (
+        "sem esse node nao ha multi-referencia")
+    assert ad["custom_nodes"]["UnetLoaderGGUF"].endswith("ComfyUI-GGUF")
+
+
+def test_check_nodes_detecta_servidor_sem_o_custom_node():
+    key = "qwen_edit_2511_q3_k_m"
+    req = mr.adapter_for(key)["required_nodes"]
+    completo = {n: {} for n in req}
+    assert mr.check_nodes(completo, key)["ok"] is True
+
+    # Servidor com ComfyUI puro, sem o custom node: tem de reprovar.
+    sem_gguf = {n: {} for n in req if n != "UnetLoaderGGUF"}
+    v = mr.check_nodes(sem_gguf, key)
+    assert v["ok"] is False
+    assert v["missing"] == ["UnetLoaderGGUF"]
+    assert "ComfyUI-GGUF" in v["custom_node_hint"]["UnetLoaderGGUF"]
+
+
+def test_nomes_dos_pesos_para_o_comfyui_sao_basename():
+    """O ComfyUI enxerga o basename; o repo publica sob split_files/."""
+    f = mr.comfy_model_files("qwen_edit_2511_q3_k_m")
+    assert f["unet"] == "qwen-image-edit-2511-Q3_K_M.gguf"
+    assert f["clip"] == "qwen_2.5_vl_7b_fp8_scaled.safetensors"
+    assert f["vae"] == "qwen_image_vae.safetensors"
+    for v in f.values():
+        assert "/" not in v, f"caminho do repo vazaria para o workflow: {v}"
+    assert mr.comfy_model_files("qwen_edit_2511_q4_0")["unet"] != f["unet"]
+
+
+def test_workflow_gguf_usa_o_loader_certo_e_nao_tem_weight_dtype():
+    wf = json.loads((ROOT / "workflows/experimental/qwen_edit_gguf/v1.json"
+                     ).read_text(encoding="utf-8"))
+    classes = {v["class_type"] for k, v in wf.items() if k != "_comment"}
+    assert "UnetLoaderGGUF" in classes
+    assert "UNETLoader" not in classes, "UNETLoader core nao carrega GGUF"
+    # UnetLoaderGGUF nao aceita weight_dtype: a precisao esta no arquivo.
+    loader = next(v for v in wf.values()
+                  if isinstance(v, dict)
+                  and v.get("class_type") == "UnetLoaderGGUF")
+    assert "weight_dtype" not in loader["inputs"]
+    # O text encoder fp8 tem de ficar no CLIPLoader core.
+    assert "CLIPLoaderGGUF" not in classes, (
+        "misturar fp8 scaled com loader GGUF nao e suportado")
+    # Todo node exigido pelo adapter aparece mesmo no grafo.
+    req = set(mr.adapter_for("qwen_edit_2511_q3_k_m")["required_nodes"])
+    assert req <= classes, req - classes
+
+
+def test_ambiente_colab_nao_fixa_nomes_de_peso():
+    """Nomes de peso fixos no yaml seriam 2a fonte da verdade e quebrariam
+    ao trocar Q3 por Q4 no dropdown."""
+    env = yaml.safe_load(
+        (ROOT / "config/environments/colab_comfy_gguf.yaml"
+         ).read_text(encoding="utf-8"))
+    assert env["comfyui"]["models"] == {}
+    assert env["comfyui"]["base_url_env"] == "CHIBI_COMFY_URL"
+    assert "base_url" not in env["comfyui"] or not env["comfyui"]["base_url"]
+    assert "sampling" not in env, "parametros vem do registry, por modelo"
+
+
+def test_comfyui_sobe_antes_do_download_no_notebook():
+    """10 GB so descem depois que o servidor provou que carrega o modelo."""
+    _, _, celulas = _nb(NB1)
+    i_comfy = next(i for i, c in enumerate(celulas) if "object_info" in c
+                   and "git clone" in c)
+    i_dl = next(i for i, c in enumerate(celulas) if "hf_hub_download" in c)
+    assert i_comfy < i_dl, "download acontece antes de validar o ComfyUI"
+    comfy = celulas[i_comfy]
+    assert "check_nodes" in comfy
+    assert "SystemExit" in comfy, "nao aborta com node ausente"
+    assert "COMFY_OK" in comfy
+    # Nao pode reinstalar torch: quebraria o CUDA da imagem do Colab.
+    assert "'torch', 'torchvision', 'torchaudio'" in comfy
+
+
+def test_execucao_reusa_o_runner_do_projeto():
+    _, _, celulas = _nb(NB1)
+    run = next(c for c in celulas if "mr.run_model(" in c)
+    assert "NotImplementedError" not in run
+    # Guardas de ordem.
+    assert "COMFY_OK" in run and "BAIXADO" in run
+    # Nada de inferencia paralela reimplementada na celula.
+    for proibido in ("torch.", "DiffusionPipeline", "from_pretrained",
+                     "client.submit", "KSampler"):
+        assert proibido not in run, f"inferencia paralela na celula: {proibido}"
+
+
+def test_nenhuma_celula_tem_condicional_por_modelo():
+    """A diretiva proibe if/else por modelo espalhado pelas celulas."""
+    for nb_path in (NB1, NB2):
+        _, _, celulas = _nb(nb_path)
+        for c in celulas:
+            for key in mr.model_keys():
+                assert f"== '{key}'" not in c and f'== "{key}"' not in c, (
+                    f"{nb_path.name}: condicional por modelo ({key})")
 
 
 if __name__ == "__main__":

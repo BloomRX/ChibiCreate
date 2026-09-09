@@ -465,6 +465,148 @@ def verify_remote_files(key: str, registry: dict[str, Any] | None = None
     return resultado
 
 
+# ---------------------------------------------------------------------------
+# Adapter de inferencia
+#
+# Ponto UNICO onde a matriz encosta na execucao. As celulas do notebook nao
+# sabem qual modelo esta rodando: elas chamam `run_model()` e o adapter
+# resolve workflow, nomes de arquivo e nodes a partir do registry.
+# `run_qwen_edit` continua sendo a unica implementacao de inferencia do
+# projeto; aqui nao ha um segundo caminho paralelo.
+# ---------------------------------------------------------------------------
+
+#: pipeline_type -> como executar. Modelo sem entrada aqui nao tem adapter.
+ADAPTERS: dict[str, dict] = {
+    "instruction_edit_multi_image": {
+        "runner": "qwen_edit",
+        "workflow": "experimental/qwen_edit_gguf",
+        "workflow_version": "v1",
+        "lock_key": "qwen_image_edit_2511",
+        # Nodes que TEM de existir no /object_info do servidor.
+        "required_nodes": [
+            "UnetLoaderGGUF",
+            "CLIPLoader",
+            "VAELoader",
+            "TextEncodeQwenImageEditPlus",
+            "KSampler",
+            "VAEEncode",
+            "VAEDecode",
+            "LoadImage",
+            "SaveImage",
+        ],
+        "custom_nodes": {
+            "UnetLoaderGGUF": "https://github.com/city96/ComfyUI-GGUF",
+        },
+    },
+}
+
+
+class AdapterIndisponivel(RuntimeError):
+    """O modelo selecionado nao tem caminho de execucao implementado."""
+
+
+def adapter_for(key: str, registry: dict | None = None) -> dict:
+    """Adapter do modelo, ou erro explicito dizendo o que falta.
+
+    Nao existe fallback para outro modelo: trocar de modelo em silencio
+    invalidaria a comparacao.
+    """
+    cfg = get_model(key, registry)
+    tipo = cfg.get("pipeline_type")
+    ad = ADAPTERS.get(tipo)
+    if ad is None:
+        raise AdapterIndisponivel(
+            f"'{key}' (pipeline_type={tipo}) nao tem adapter implementado.\n"
+            "Nenhum outro modelo sera usado no lugar. Modelos com adapter: "
+            + ", ".join(sorted(
+                k for k in model_keys(registry)
+                if get_model(k, registry).get("pipeline_type") in ADAPTERS))
+        )
+    return dict(ad)
+
+
+def comfy_model_files(key: str, registry: dict | None = None) -> dict[str, str]:
+    """Nomes dos pesos COMO O COMFYUI OS ENXERGA, tirados do registry.
+
+    O ComfyUI enxerga o basename dentro de models/<pasta>/; o repo publica os
+    auxiliares dentro de `split_files/...`, entao o caminho do repo nao serve.
+    """
+    itens = download_plan(key, registry)
+    papel_para_campo = {
+        "diffusion_model": "unet", "text_encoder": "clip", "vae": "vae",
+    }
+    files: dict[str, str] = {}
+    for item in itens:
+        campo = papel_para_campo.get(item["role"])
+        if campo:
+            files[campo] = item["file"].rsplit("/", 1)[-1]
+    return files
+
+
+def check_nodes(object_info: dict, key: str,
+                registry: dict | None = None) -> dict:
+    """Confere que o servidor tem os nodes que o workflow do modelo usa.
+
+    Recebe o /object_info ja baixado para nao acoplar o registry ao cliente
+    HTTP. Devolve o veredito em vez de levantar: quem chama decide abortar.
+    """
+    ad = adapter_for(key, registry)
+    faltando = [n for n in ad["required_nodes"] if n not in object_info]
+    return {
+        "ok": not faltando,
+        "required": list(ad["required_nodes"]),
+        "missing": faltando,
+        "custom_node_hint": {
+            n: ad.get("custom_nodes", {}).get(n)
+            for n in faltando if n in ad.get("custom_nodes", {})
+        },
+    }
+
+
+def run_model(key: str, *, character_id: str, input_rel: str,
+              extra_refs: tuple, prompt: str, run_dir, models_dir,
+              environment_name: str, registry: dict | None = None,
+              seed: int | None = None):
+    """Executa o modelo selecionado reusando `experiment.run_qwen_edit`.
+
+    Os parametros de sampling vem do registry (fonte unica), nao de defaults
+    espalhados pelo notebook.
+    """
+    from . import experiment
+
+    reg = registry or load_registry()
+    cfg = get_model(key, reg)
+    ad = adapter_for(key, reg)
+    if ad["runner"] != "qwen_edit":
+        raise AdapterIndisponivel(f"runner '{ad['runner']}' nao implementado")
+
+    par = cfg["parameters"]
+    overrides = {
+        "steps": par["steps"], "cfg": par["cfg"],
+        "sampler": par["sampler"], "scheduler": par["scheduler"],
+        "denoise": par["denoise"],
+        "width": par["resolution"][0], "height": par["resolution"][1],
+        "batch": par.get("batch", 1),
+    }
+    if seed is not None:
+        overrides["seed"] = seed
+
+    return experiment.run_qwen_edit(
+        character_id,
+        input_rel=input_rel,
+        extra_refs=tuple(extra_refs),
+        prompt=prompt,
+        environment_name=environment_name,
+        model_key=key,
+        lock_key=ad["lock_key"],
+        workflow_name=ad["workflow"],
+        workflow_version=ad["workflow_version"],
+        model_files_override=comfy_model_files(key, reg),
+        overrides=overrides,
+        run_dir=run_dir,
+    )
+
+
 def free_disk_gb(path: str | Path = "/") -> float:
     return shutil.disk_usage(str(path)).free / 1024 ** 3
 

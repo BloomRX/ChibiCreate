@@ -266,6 +266,7 @@ def build_recipe(
     model_files: dict[str, str],
     timings: dict[str, Any] | None = None,
     cost: dict[str, Any] | None = None,
+    lock_key: str | None = None,
 ) -> dict[str, Any]:
     """Recipe da execucao experimental.
 
@@ -274,8 +275,19 @@ def build_recipe(
     """
     from .recipe import environment_block
 
-    entry = config.model(model_key) or {}
+    # Variantes da matriz (quantizacoes de terceiro) nao tem entrada propria
+    # no lock: licenca e procedencia sao as do modelo-base. `model_key`
+    # continua registrando qual variante de fato rodou.
+    entry = config.model(lock_key or model_key) or {}
     lic = entry.get("license", {}) or {}
+
+    # Uma VARIANTE nao herda o status comercial do modelo-base: quem
+    # redistribuiu os pesos e outro autor, com licenca propria nao conferida.
+    # Herdar "approved" aqui seria o `commercial = true` automatico que a
+    # diretiva proibe.
+    variante = bool(lock_key) and lock_key != model_key
+    commercial = ("pending_human_review" if variante
+                  else lic.get("commercial_status", "unverified"))
 
     env_block = environment_block()
     env_block["environment_name"] = environment_name
@@ -303,7 +315,14 @@ def build_recipe(
         "license": lic.get("spdx"),
         "license_verified": bool(lic.get("verified")),
         "license_source": lic.get("source_url"),
-        "commercial_status": lic.get("commercial_status", "unverified"),
+        "commercial_status": commercial,
+        "commercial_status_note": (
+            "Status do modelo-base NAO se aplica: esta e uma variante "
+            "redistribuida por terceiro. Decisao humana pendente."
+        ) if variante else None,
+        "base_model_key": lock_key if variante else None,
+        "base_model_commercial_status": lic.get(
+            "commercial_status", "unverified") if variante else None,
 
         "workflow": f"{workflow_name}/{workflow_version}.json",
         "workflow_sha256": workflow_sha,
@@ -319,6 +338,7 @@ def build_recipe(
             "denoise": params.get("denoise"),
             "width": params.get("width"),
             "height": params.get("height"),
+            "batch": params.get("batch", 1),
         },
 
         "quantization": model_files.get("weight_dtype"),
@@ -418,6 +438,9 @@ def run_qwen_edit(
     overrides: dict[str, Any] | None = None,
     dry_run: bool = False,
     eval_mode: bool = False,
+    model_files_override: dict[str, str] | None = None,
+    run_dir: Path | None = None,
+    lock_key: str | None = None,
 ) -> ExperimentResult:
     """Executa um experimento de edicao. Com `dry_run`, nao chama o servidor.
 
@@ -454,7 +477,7 @@ def run_qwen_edit(
             raise ExperimentError(f"referencia extra nao encontrada: {rp}")
         extra_paths.append(rp)
 
-    ok, why = config.technically_usable(model_key)
+    ok, why = config.technically_usable(lock_key or model_key)
     if not ok:
         raise ExperimentError(f"modelo '{model_key}' nao liberado: {why}")
 
@@ -486,10 +509,17 @@ def run_qwen_edit(
 
     # Avaliacao comparativa vai para experiments/model_eval/<model_key>/,
     # separada das execucoes avulsas.
-    base = experiments_root() / MODEL_EVAL_DIRNAME if eval_mode else experiments_root()
-    model_dir = base / model_key
-    run_id = next_run_id(model_dir)
-    run_dir = model_dir / run_id
+    # `run_dir` explicito atende o layout da matriz de avaliacao
+    # (experiments/model_eval/<stage>/<model>/<run_id>), que tem um nivel de
+    # estagio a mais que o layout padrao.
+    if run_dir is not None:
+        run_id = run_dir.name
+    else:
+        base = (experiments_root() / MODEL_EVAL_DIRNAME if eval_mode
+                else experiments_root())
+        model_dir = base / model_key
+        run_id = next_run_id(model_dir)
+        run_dir = model_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
@@ -502,8 +532,21 @@ def run_qwen_edit(
     local_input = run_dir / f"input{input_path.suffix}"
     shutil.copy2(input_path, local_input)
 
-    model_files = _model_files(environment_name) if not dry_run else \
-        _model_files_or_placeholder(environment_name, warnings)
+    # Os nomes dos pesos do Qwen GGUF vem do registry da matriz (mudam com a
+    # quantizacao escolhida no dropdown), nao de um yaml de ambiente fixo.
+    if model_files_override is not None:
+        faltando = [k for k in ("unet", "clip", "vae")
+                    if not model_files_override.get(k)]
+        if faltando:
+            raise ExperimentError(
+                "model_files_override incompleto: falta "
+                + ", ".join(faltando))
+        model_files = dict(model_files_override)
+        model_files.setdefault("weight_dtype", "default")
+    elif not dry_run:
+        model_files = _model_files(environment_name)
+    else:
+        model_files = _model_files_or_placeholder(environment_name, warnings)
 
     values = {
         "UNET_NAME": model_files["unet"],
@@ -640,6 +683,7 @@ def run_qwen_edit(
         model_files=model_files,
         timings=timings,
         cost=cost,
+        lock_key=lock_key,
     )
     if output_path and output_path.is_file():
         # Campo proprio: "imagem igual" e "arquivo igual" sao perguntas

@@ -278,3 +278,67 @@ Duas defesas foram adicionadas para que isso nao se repita:
 
 A verificacao custa uma chamada de API e roda antes de qualquer byte de
 peso ser transferido.
+
+## Execucao real: ComfyUI dentro do Colab (Notebook 1)
+
+A celula de execucao vinha com `NotImplementedError` de proposito: nao havia
+GPU para validar nenhum caminho de inferencia. Com o T4 disponivel, o
+Notebook 1 passou a executar de verdade `Original -> Qwen-Image-Edit-2511
+Q3_K_M`, com ComfyUI instalado no proprio runtime.
+
+### Ordem das celulas (a ordem e o mecanismo de seguranca)
+
+    7  instalar ComfyUI + ComfyUI-GGUF, subir o servidor, /object_info
+    8  baixar os pesos
+    9  executar
+
+O ComfyUI sobe **antes** do download: os ~20 GB so descem depois que o
+servidor provou que tem os nodes necessarios. A celula 7 aborta com
+`SystemExit` se faltar qualquer node, e nao troca de modelo para contornar.
+
+### O que e validado antes de gastar GPU
+
+| verificacao | onde | falha => |
+|---|---|---|
+| GPU, VRAM, RAM, disco, CUDA, Torch | celula 3 | `BLOCKED` |
+| nomes dos arquivos no repo HF | celula 8 | `SystemExit` com o nome real |
+| nodes do workflow em `/object_info` | celula 7 | `SystemExit` + link do node |
+| peso visivel no `UnetLoaderGGUF` | celula 9 | `SystemExit` |
+
+A validacao contra `/object_info`, ate aqui **nunca realizada**, passou a
+acontecer a cada execucao.
+
+### Adapter: um ponto unico, sem condicional por modelo
+
+`model_registry.ADAPTERS` mapeia `pipeline_type` -> workflow, nodes exigidos
+e chave do lock. As celulas chamam `mr.run_model(...)` sem saber qual modelo
+esta rodando, e `run_model` reusa `experiment.run_qwen_edit` — nao existe uma
+segunda implementacao de inferencia no projeto. Um teste falha se aparecer
+condicional por modelo em qualquer celula.
+
+Modelo sem adapter levanta `AdapterIndisponivel` dizendo o que falta.
+Hoje so o `instruction_edit_multi_image` (Qwen GGUF) tem adapter: LongCat e
+Z-Image estao BLOCKED por VRAM no T4 e Pony ficou fora por decisao do
+usuario. Nenhum deles cai em outro modelo por fallback.
+
+### Workflow
+
+`workflows/experimental/qwen_edit_gguf/v1.json`, derivado do
+`qwen_edit_multiref/v1`. Unica diferenca: o node 1 e `UnetLoaderGGUF` em vez
+de `UNETLoader`, porque o loader core nao le `.gguf`. O text encoder fp8
+continua no `CLIPLoader` core de proposito — usar o loader GGUF com um
+safetensors fp8 scaled da "Mixing scaled FP8 with GGUF is not supported".
+
+### Licenca da variante nao herda a do modelo-base
+
+O recipe de uma variante quantizada grava
+`commercial_status: pending_human_review`, mesmo com o modelo-base Apache 2.0
+`approved`, e registra o status do base em `base_model_commercial_status`.
+Quem redistribuiu os pesos e outro autor, com licenca nao conferida por nos.
+
+### O que continua valendo
+
+Q4_0 nao e baixado e nao ha fallback automatico para ele: reset do runtime e
+escolha no dropdown. O recipe nasce `approval_status: experimental`. Uma
+execucao nao afirma determinismo. **Nenhum vencedor e escolhido por metrica
+automatica** — a avaliacao dos tres eixos e humana.
