@@ -568,6 +568,133 @@ def test_notebooks_executam_uma_vez_e_nao_varrem_modelos():
         assert "for key in model_keys" not in src
 
 
+
+def test_sessao_limpa_chega_ao_preflight_sem_nameerror():
+    """Regressao do 'NameError: name mr is not defined'.
+
+    Executa as celulas em ordem num namespace VAZIO, como faz um runtime
+    Colab recem-criado, ate o preflight. Nenhuma variavel pode vir de
+    sessao anterior nem de celula opcional.
+    """
+    import subprocess
+    import types
+
+    from IPython.core.inputtransformer2 import TransformerManager
+
+    for nb_path in (NB1, NB2):
+        data, _, _ = _nb(nb_path)
+        tm = TransformerManager()
+        ns: dict = {"__name__": "__main__", "display": lambda *a, **k: None}
+
+        # Stubs: sem rede, sem GPU, sem Colab.
+        def _fake_run(cmd, *a, **k):
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        real_run = subprocess.run
+        subprocess.run = _fake_run
+        try:
+            for i, c in enumerate(data["cells"]):
+                if c["cell_type"] != "code":
+                    continue
+                src = "".join(c["source"])
+                if "files.upload()" in src:
+                    ns["FLUX_RUN003"] = (
+                        ROOT / "characters/waifu_001/reference/full_body.png")
+                    ns["zip_name"] = "z.zip"
+                    continue
+                try:
+                    exec(compile(tm.transform_cell(src), f"c{i}", "exec"), ns)
+                except NameError as exc:
+                    raise AssertionError(
+                        f"{nb_path.name} celula {i}: NameError em sessao "
+                        f"limpa -> {exc}") from exc
+                except SystemExit:
+                    break          # preflight bloqueou: comportamento valido
+                except Exception:
+                    break          # sem GPU/rede aqui; NameError e o alvo
+                if "mr.preflight(" in src:
+                    assert "PF" in ns, "preflight nao produziu PF"
+                    break
+            else:
+                raise AssertionError(f"{nb_path.name}: preflight nao alcancado")
+        finally:
+            subprocess.run = real_run
+
+
+def test_setup_importa_mr_e_valida_a_api():
+    """A celula 1 tem de importar mr e falhar com mensagem, nao adiante."""
+    for nb_path in (NB1, NB2):
+        data, _, celulas = _nb(nb_path)
+        codigo = [i for i, c in enumerate(data["cells"])
+                  if c["cell_type"] == "code"]
+        primeira = celulas[codigo[0]]
+        assert "from chibi import model_registry as mr" in primeira, (
+            f"{nb_path.name}: mr nao e importado na primeira celula")
+        assert "sys.path" in primeira, "sys.path nao configurado"
+        assert "FALHA AO IMPORTAR" in primeira, (
+            "import sem mensagem de erro legivel")
+        assert "hasattr(mr" in primeira, "API do registry nao e validada"
+        assert "preflight" in primeira
+        assert "SETUP_OK" in primeira
+        # Nao pode reimplementar o registry dentro do notebook.
+        assert "def preflight(" not in "\n".join(celulas), (
+            f"{nb_path.name} duplica a implementacao do registry")
+
+
+def test_mr_definido_antes_de_qualquer_uso():
+    """Nenhuma celula usa mr./MODEL_KEY antes da celula que os define."""
+    for nb_path in (NB1, NB2):
+        data, _, _ = _nb(nb_path)
+        celulas = [(i, "".join(c["source"])) for i, c in
+                   enumerate(data["cells"]) if c["cell_type"] == "code"]
+        i_mr = next(i for i, s in celulas if "import model_registry as mr" in s)
+        i_key = next(i for i, s in celulas if "MODEL_KEY = mr.key_for_label" in s)
+        for i, s in celulas:
+            if "mr." in s and i < i_mr:
+                raise AssertionError(f"{nb_path.name} c{i}: usa mr antes de importar")
+            if "MODEL_KEY" in s and i < i_key and "MODEL_KEY = " not in s:
+                raise AssertionError(f"{nb_path.name} c{i}: usa MODEL_KEY antes de definir")
+
+
+def test_preflight_checa_as_proprias_dependencias():
+    for nb_path in (NB1, NB2):
+        _, _, celulas = _nb(nb_path)
+        cel = next(c for c in celulas if "mr.preflight(" in c)
+        assert "_faltando" in cel, "preflight nao valida dependencias"
+        for v in ("mr", "REG", "MODEL_KEY", "CFG"):
+            assert f"'{v}'" in cel, f"preflight nao checa {v}"
+        # Erro nao pode ser escondido.
+        assert "raise" in cel
+        assert "except" not in cel.split("def _gpu")[0].split("_faltando")[0]
+
+
+def test_run_all_funciona_sem_clique_no_dropdown():
+    """Run All nao clica no widget: precisa de selecao por indice."""
+    for nb_path in (NB1, NB2):
+        _, src, _ = _nb(nb_path)
+        assert "MODEL_INDEX" in src, f"{nb_path.name} sem MODEL_INDEX"
+        assert "USE_WIDGET" in src, "sem fallback para ipywidgets ausente"
+
+
+def test_longcat_bloqueado_num_t4_de_15gb():
+    """Hardware real do usuario: T4 15 GB, 14.6 livres, 65.3 GB de disco.
+
+    LongCat declara ~18 GB de VRAM => tem de bloquear. O requisito NAO
+    pode ser reduzido artificialmente para caber.
+    """
+    pf = mr.preflight("longcat_image_edit",
+                      available_disk_gb=65.3, available_vram_gb=14.6)
+    assert pf.status == mr.BLOCKED_VRAM, pf.status
+    assert not pf.ready
+    assert mr.get_model("longcat_image_edit")["vram_gb"] >= 18, (
+        "requisito do LongCat foi reduzido para caber no T4")
+
+    # O Qwen Q3, menor, passa no mesmo runtime.
+    q3 = mr.preflight("qwen_edit_2511_q3_k_m",
+                      available_disk_gb=65.3, available_vram_gb=14.6)
+    assert q3.ready, q3.report()
+
+
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
