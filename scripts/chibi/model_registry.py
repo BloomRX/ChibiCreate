@@ -202,12 +202,23 @@ class Preflight:
     expected_vram_gb: float
     available_disk_gb: float | None
     available_vram_gb: float | None
+    expected_ram_gb: float | None = None
+    available_ram_gb: float | None = None
+    #: True quando expected_ram_gb e valor conservador nosso, nao medicao.
+    ram_estimated: bool = True
+    #: Pico de RSS medido numa execucao real, quando existir. Enquanto for
+    #: None, o unico numero disponivel e a ESTIMATIVA.
+    observed_peak_ram_gb: float | None = None
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
     def ready(self) -> bool:
         return self.status == READY
+
+    @property
+    def blocked_by_ram(self) -> bool:
+        return self.status.startswith(BLOCKED_RAM)
 
     def report(self) -> str:
         def fmt(v):
@@ -222,6 +233,22 @@ class Preflight:
             "",
             f"AVAILABLE DISK:\n    {fmt(self.available_disk_gb)}",
             f"AVAILABLE VRAM:\n    {fmt(self.available_vram_gb)}",
+        ]
+        if self.expected_ram_gb:
+            # RAM estimada e RAM observada sao numeros diferentes e nao podem
+            # aparecer como se tivessem o mesmo peso: um veio de model card,
+            # o outro de medicao nossa.
+            sufixo = " (estimated)" if self.ram_estimated else " (measured)"
+            linhas += [
+                "",
+                f"EXPECTED RAM{sufixo}:\n    {self.expected_ram_gb:.1f} GB",
+                f"AVAILABLE RAM:\n    {fmt(self.available_ram_gb)}",
+                "OBSERVED PEAK RAM:\n    " + (
+                    f"{self.observed_peak_ram_gb:.1f} GB"
+                    if self.observed_peak_ram_gb is not None
+                    else "nunca medido — rode o RAM DIAGNOSTIC"),
+            ]
+        linhas += [
             "",
             f"STATUS:\n    {self.status}",
         ]
@@ -257,6 +284,7 @@ def preflight(
     disco = float(m["disk_gb"])
     vram = float(m["vram_gb"])
     ram = float(m.get("ram_gb") or 0)
+    estimado = bool(m.get("ram_estimated", True))
 
     razoes: list[str] = []
     avisos: list[str] = []
@@ -314,11 +342,15 @@ def preflight(
     if ram:
         if available_ram_gb is None:
             if status == READY:
-                status = BLOCKED_RAM
+                status = BLOCKED_RAM + " (estimated)"
             razoes.append("RAM desconhecida — nao prossigo as cegas.")
         elif available_ram_gb < ram:
             if status == READY:
-                status = BLOCKED_RAM
+                # "(estimated)" e deliberado: o bloqueio vem de um requisito
+                # que nos estimamos, nao de consumo medido. Some quando o
+                # RAM DIAGNOSTIC substituir a estimativa por medicao.
+                status = BLOCKED_RAM + (" (estimated)" if estimado else
+                                        " (measured)")
             falta = ram - available_ram_gb
             razoes.append(
                 f"Faltam ~{falta:.1f} GB de RAM "
@@ -331,6 +363,10 @@ def preflight(
         razoes.append("Requisitos declarados cabem no runtime atual.")
 
     return Preflight(
+        expected_ram_gb=ram or None,
+        available_ram_gb=available_ram_gb,
+        ram_estimated=estimado,
+        observed_peak_ram_gb=m.get("ram_observed_peak_gb"),
         model_key=key,
         label=m["label"],
         status=status,

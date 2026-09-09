@@ -397,3 +397,59 @@ Os dois travamentos tinham gatilhos diferentes:
 Nenhum requisito foi reduzido para caber, e nenhum fallback automatico foi
 adicionado. **A escolha do proximo passo e humana** — ver o relatorio ao
 usuario.
+
+## RAM DIAGNOSTIC — medir em vez de estimar
+
+O bloqueio do Qwen Q3_K_M no T4 vem de `ram_gb: 16`, que e uma **estimativa
+conservadora nossa**, nunca medida. O T4 tem ~12.7 GB. Antes de decidir
+qualquer coisa, e preciso saber se a estimativa procede.
+
+### O bloqueio continua; a estimativa e que fica sob teste
+
+`preflight()` separa tres numeros que antes se confundiam:
+
+    EXPECTED RAM (estimated) : 16.0 GB     <- valor nosso, nao medido
+    AVAILABLE RAM            : 12.7 GB     <- medido no runtime
+    OBSERVED PEAK RAM        : nunca medido — rode o RAM DIAGNOSTIC
+
+O status virou `BLOCKED — insufficient RAM (estimated)`. O sufixo sai quando
+houver medicao. **O requisito continua 16 GB**: nada foi reduzido para caber.
+
+### Como rodar
+
+Celula 3, marcar `prosseguir_apenas_para_medir_ram`. Isso **nao** remove o
+bloqueio: libera so a celula 10. A porta e condicionada a
+`PF.blocked_by_ram and ram_estimated` — bloqueio por VRAM ou disco continua
+terminal, porque la o numero e medido e nao ha o que descobrir.
+
+A celula 9 (benchmark oficial) permanece recusando sob bloqueio.
+
+### O que e medido
+
+`scripts/chibi/memprobe.py` amostra em thread daemon (1-5 s): RAM total,
+disponivel e usada, RSS do Python, RSS do processo ComfyUI e filhos, swap
+total e usada, VRAM livre e usada. Cada amostra carrega a **fase**
+(`COMFYUI_BOOT`, `MODEL_LOAD`, `TEXT_ENCODER`, `VAE`, `WORKFLOW_PREP`,
+`QUEUE`, `INFERENCE`, `UNLOAD`), o que permite dizer *onde* o consumo
+estourou — e disso depende a escolha entre trocar de runtime e trocar o
+text encoder.
+
+Protecoes: `nvidia-smi` com timeout, heartbeat a cada 20 s, watchdog que
+encerra a espera e marca `TIMEOUT`, e evento `RAM_PRESSURE` registrado em
+vez de congelamento silencioso. O watchdog **nao tenta resolver** o OOM.
+Erro no coletor nunca derruba a execucao medida.
+
+### Conclusao
+
+| conclusao | criterio |
+|---|---|
+| `FIT` | terminou, sem swap, folga >= 1.5 GB |
+| `BORDERLINE` | terminou, sem swap, folga < 1.5 GB |
+| `DOES_NOT_FIT` | OOM/freeze/timeout, **ou** swap > 0.5 GB |
+| `INCONCLUSIVE` | sem amostras ou execucao nao concluida |
+
+Swap usada conta como `DOES_NOT_FIT` mesmo se a execucao terminar: terminar
+nao prova que coube. A conclusao e sobre **caber**, nada mais — nao aprova
+o modelo nem escolhe runtime. Isso e humano.
+
+Saida em `experiments/model_eval/model_only/<model>/<run>/ram_diagnostic.json`.

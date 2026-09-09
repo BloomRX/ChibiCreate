@@ -795,7 +795,7 @@ def test_longcat_bloqueado_num_t4_de_15gb():
     q3 = mr.preflight("qwen_edit_2511_q3_k_m",
                       available_disk_gb=65.3, available_vram_gb=14.6,
                       available_ram_gb=12.7)
-    assert q3.status == mr.BLOCKED_RAM, q3.report()
+    assert q3.status.startswith(mr.BLOCKED_RAM), q3.report()
     # Com RAM suficiente, o mesmo modelo passa: o bloqueio e da RAM, nao
     # um requisito inflado.
     folgado = mr.preflight("qwen_edit_2511_q3_k_m",
@@ -1064,8 +1064,8 @@ def test_preflight_bloqueia_por_ram_no_t4_do_colab():
     pf = mr.preflight("qwen_edit_2511_q3_k_m",
                       available_disk_gb=65.3, available_vram_gb=14.6,
                       available_ram_gb=12.7)
-    assert pf.status == mr.BLOCKED_RAM, pf.status
-    assert not pf.ready
+    assert pf.status.startswith(mr.BLOCKED_RAM), pf.status
+    assert pf.blocked_by_ram and not pf.ready
     assert any("RAM" in r for r in pf.reasons)
     assert any("SWAP" in r or "swap" in r for r in pf.reasons), (
         "precisa explicar que o sintoma e travamento, nao erro")
@@ -1115,6 +1115,112 @@ def test_execucao_longa_mostra_sinal_de_vida():
     assert "threading" in run and "/queue" in run, (
         "celula 9 precisa reportar progresso durante a inferencia")
     assert "finally" in run, "o monitor tem de parar mesmo se a run falhar"
+
+
+
+
+def _sys_path():
+    import sys as _s
+    if str(ROOT / "scripts") not in _s.path:
+        _s.path.insert(0, str(ROOT / "scripts"))
+
+
+# ----------------------------------------------------------------------
+# RAM DIAGNOSTIC
+# ----------------------------------------------------------------------
+
+def test_preflight_separa_ram_estimada_de_observada():
+    """Estimativa e medicao nao podem aparecer com o mesmo peso."""
+    rel = mr.preflight("qwen_edit_2511_q3_k_m", 65.3, 14.6,
+                       available_ram_gb=12.7).report()
+    assert "EXPECTED RAM (estimated)" in rel
+    assert "AVAILABLE RAM" in rel
+    assert "OBSERVED PEAK RAM" in rel
+    assert "nunca medido" in rel, (
+        "sem medicao, o relatorio tem de dizer isso explicitamente")
+    # O status carrega a marca de que o bloqueio vem de estimativa.
+    pf = mr.preflight("qwen_edit_2511_q3_k_m", 65.3, 14.6,
+                      available_ram_gb=12.7)
+    assert pf.status.endswith("(estimated)"), pf.status
+    assert pf.blocked_by_ram and not pf.ready
+
+
+def test_requisito_de_ram_permanece_16_e_estimado():
+    """O pedido e MEDIR, nao baixar o requisito para caber."""
+    for key in ("qwen_edit_2511_q3_k_m", "qwen_edit_2511_q4_0"):
+        m = mr.get_model(key)
+        assert m["ram_gb"] == 16.0, "requisito nao pode ser reduzido"
+        assert m["ram_estimated"] is True
+
+
+def test_celula_de_diagnostico_existe_e_nao_e_o_benchmark():
+    _, _, celulas = _nb(NB1)
+    diag = [c for c in celulas if "RAM DIAGNOSTIC" in c and "memprobe" in c]
+    assert len(diag) == 1, "deve haver exatamente uma celula de diagnostico"
+    cel = diag[0]
+    assert "NAO e o benchmark oficial" in cel or "nao aprova" in cel
+    # Mede o que foi pedido.
+    for campo in ("ram_usada_gb", "ram_disponivel_gb", "swap_usada_gb",
+                  "vram_livre_gb", "comfyui_pid"):
+        assert campo in cel, f"diagnostico nao coleta {campo}"
+    # RSS e RAM total vem do MemoryProbe; o relatorio tem de mostra-los.
+    import inspect as _i
+    _sys_path()
+    from chibi import memprobe as _mp
+    rel = _i.getsource(_mp.MemoryProbe.report)
+    for campo in ("RAM total", "RSS pico", "swap", "VRAM"):
+        assert campo in rel, f"relatorio nao mostra {campo}"
+    # Watchdog e heartbeat.
+    assert "timeout_minutos" in cel and "WATCHDOG" in cel
+    assert "on_sample" in cel, "sem heartbeat nao da para ver progresso"
+    # Salva evidencia em disco.
+    assert "ram_diagnostic.json" in cel
+
+
+def test_diagnostico_nao_altera_modelo_nem_parametros():
+    """Medir, nao otimizar: nada de trocar quantizacao ou resolucao."""
+    _, _, celulas = _nb(NB1)
+    cel = next(c for c in celulas if "memprobe" in c)
+    for proibido in ("Q4_0", "q4_0", "mmproj", "CLIPLoaderGGUF",
+                     "resolution", "width=", "height=", "--novram"):
+        assert proibido not in cel, f"diagnostico mexeu em {proibido}"
+    # Usa o mesmo runner e os parametros do registry.
+    assert "mr.run_model(" in cel
+
+
+def test_benchmark_oficial_nao_roda_sob_bloqueio():
+    _, _, celulas = _nb(NB1)
+    bench = next(c for c in celulas
+                 if "mr.run_model(" in c and "memprobe" not in c)
+    assert "PREFLIGHT_OK" in bench and "SystemExit" in bench
+
+
+def test_diagnostico_exige_aceite_explicito():
+    _, _, celulas = _nb(NB1)
+    diag = next(c for c in celulas if "memprobe" in c)
+    assert "executar_diagnostico" in diag
+    assert "DIAGNOSTICO_AUTORIZADO" in diag
+
+    pf_cel = next(c for c in celulas if "mr.preflight(" in c)
+    assert "prosseguir_apenas_para_medir_ram" in pf_cel
+    # A porta dos fundos vale SO para RAM estimada.
+    assert "blocked_by_ram" in pf_cel and "ram_estimated" in pf_cel
+
+
+def test_bloqueio_de_vram_e_disco_continua_terminal():
+    """VRAM e disco sao medidos, nao estimados: nao ha o que descobrir."""
+    _, _, celulas = _nb(NB1)
+    pf_cel = next(c for c in celulas if "mr.preflight(" in c)
+    cond = next(l for l in pf_cel.splitlines()
+                if "DIAGNOSTICO_AUTORIZADO = True" in l or
+                ("if" in l and "PF.blocked_by_ram" in l))
+    bloco = pf_cel[pf_cel.index("if (not PF.ready"):
+                   pf_cel.index("DIAGNOSTICO_AUTORIZADO = True")]
+    assert "PF.blocked_by_ram" in bloco, (
+        "autorizacao nao esta condicionada ao bloqueio por RAM")
+    assert "ram_estimated" in bloco, (
+        "autorizacao nao esta condicionada a RAM ser ESTIMADA")
+    assert "prosseguir_apenas_para_medir_ram" in bloco
 
 
 if __name__ == "__main__":
