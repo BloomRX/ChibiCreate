@@ -171,11 +171,31 @@ models:
   qwen_edit_2511_q3_k_m:
     label: "Qwen-Image-Edit-2511 Q3_K_M"
     repo: unsloth/Qwen-Image-Edit-2511-GGUF
-    file: Qwen-Image-Edit-2511-Q3_K_M.gguf
+    # NOME EXATO conferido na arvore de arquivos do repo: minusculo, com
+    # o sufixo de quantizacao em maiusculo. A grafia
+    # "Qwen-Image-Edit-2511-Q3_K_M.gguf" NAO existe e da 404.
+    file: qwen-image-edit-2511-Q3_K_M.gguf
+    file_verified: true
+    file_size_gb: 9.92
     revision: null
     revision_verified: false
     base_model: Qwen/Qwen-Image-Edit-2511
     base_model_revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    # O GGUF sozinho NAO roda: o UnetLoaderGGUF carrega so o difusor. Sao
+    # necessarios ainda o text encoder Qwen2.5-VL-7B, o mmproj (projecao
+    # multimodal, exigida pelo encoder em GGUF) e o VAE. Sem eles o
+    # workflow falha depois do download, com 20 GB ja gastos.
+    auxiliary_files:
+      - role: text_encoder
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+        dest: text_encoders
+        size_gb: 9.38
+      - role: vae
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/vae/qwen_image_vae.safetensors
+        dest: vae
+        size_gb: 0.25
     params: "20B (quantizado)"
     pipeline_type: instruction_edit_multi_image
     input_mode: image_plus_instruction
@@ -209,8 +229,11 @@ models:
       batch: 1
 
     # ~9.8 GB de pesos + text encoder ~8 GB + VAE ~0.25 GB.
-    download_gb: 18.5
-    download_estimated: true
+    download_gb: 19.6
+    download_estimated: false
+    download_note: >-
+      9.92 (GGUF) + 9.38 (text encoder) + 0.25 (VAE). Tamanhos lidos da
+      arvore de arquivos dos repos.
     vram_gb: 10.0
     vram_estimated: true
     vram_note: >-
@@ -247,11 +270,29 @@ models:
   qwen_edit_2511_q4_0:
     label: "Qwen-Image-Edit-2511 Q4_0"
     repo: unsloth/Qwen-Image-Edit-2511-GGUF
-    file: Qwen-Image-Edit-2511-Q4_0.gguf
+    # NOME EXATO conferido na arvore de arquivos do repo (ver Q3_K_M).
+    file: qwen-image-edit-2511-Q4_0.gguf
+    file_verified: true
+    file_size_gb: 11.04
     revision: null
     revision_verified: false
     base_model: Qwen/Qwen-Image-Edit-2511
     base_model_revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    # O GGUF sozinho NAO roda: o UnetLoaderGGUF carrega so o difusor. Sao
+    # necessarios ainda o text encoder Qwen2.5-VL-7B, o mmproj (projecao
+    # multimodal, exigida pelo encoder em GGUF) e o VAE. Sem eles o
+    # workflow falha depois do download, com 20 GB ja gastos.
+    auxiliary_files:
+      - role: text_encoder
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+        dest: text_encoders
+        size_gb: 9.38
+      - role: vae
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/vae/qwen_image_vae.safetensors
+        dest: vae
+        size_gb: 0.25
     params: "20B (quantizado)"
     pipeline_type: instruction_edit_multi_image
     input_mode: image_plus_instruction
@@ -277,8 +318,11 @@ models:
       resolution: [1024, 1024]
       batch: 1
 
-    download_gb: 21.5
-    download_estimated: true
+    download_gb: 20.7
+    download_estimated: false
+    download_note: >-
+      11.04 (GGUF) + 9.38 (text encoder) + 0.25 (VAE). Tamanhos lidos da
+      arvore de arquivos dos repos.
     vram_gb: 13.0
     vram_estimated: true
     vram_note: "Assume text encoder e VAE em RAM do sistema."

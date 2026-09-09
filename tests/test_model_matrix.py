@@ -169,8 +169,9 @@ def test_preflight_roda_antes_de_qualquer_download_no_notebook():
             f"{nb.name} baixa antes do preflight")
         # E o download tem de estar protegido pelo resultado do preflight.
         cel_dl = celulas[min(downloads)]
-        assert "ready" in cel_dl or "PF." in cel_dl or "pf." in cel_dl, (
-            "download nao verifica o preflight")
+        assert ("PREFLIGHT_OK" in cel_dl or "ready" in cel_dl
+                or "PF." in cel_dl), "download nao verifica o preflight"
+        assert "CONFIRMADO" in cel_dl, "download nao exige autorizacao"
 
 
 # ----------------------------------------------------------------------
@@ -178,10 +179,20 @@ def test_preflight_roda_antes_de_qualquer_download_no_notebook():
 # ----------------------------------------------------------------------
 
 def test_qwen_q3_q4_apontam_para_arquivos_distintos_e_corretos():
+    """Nomes EXATOS do repo unsloth (404 real ja aconteceu aqui).
+
+    O repo publica os arquivos em minusculo com o sufixo de quantizacao
+    em maiusculo. A grafia 'Qwen-Image-Edit-2511-Q3_K_M.gguf' nao existe.
+    """
     q3 = mr.get_model("qwen_edit_2511_q3_k_m")
     q4 = mr.get_model("qwen_edit_2511_q4_0")
-    assert q3["file"] == "Qwen-Image-Edit-2511-Q3_K_M.gguf", q3["file"]
-    assert q4["file"] == "Qwen-Image-Edit-2511-Q4_0.gguf", q4["file"]
+    assert q3["file"] == "qwen-image-edit-2511-Q3_K_M.gguf", q3["file"]
+    assert q4["file"] == "qwen-image-edit-2511-Q4_0.gguf", q4["file"]
+    for m in (q3, q4):
+        # O prefixo do nome tem de ser minusculo: foi exatamente o erro.
+        assert m["file"].startswith("qwen-image-edit-2511-"), m["file"]
+        assert not m["file"].startswith("Qwen-"), (
+            "nome com maiuscula da 404 no repo unsloth")
     assert q3["file"] != q4["file"]
     assert q3["repo"] == q4["repo"]
     # Q3 e menor que Q4 e e o primeiro a tentar.
@@ -772,6 +783,97 @@ def test_longcat_bloqueado_num_t4_de_15gb():
     q3 = mr.preflight("qwen_edit_2511_q3_k_m",
                       available_disk_gb=65.3, available_vram_gb=14.6)
     assert q3.ready, q3.report()
+
+
+
+def test_plano_de_download_inclui_text_encoder_e_vae():
+    """GGUF sozinho nao roda: falta text encoder e VAE.
+
+    Sem isto o notebook baixaria 10 GB e so descobriria a falta na hora
+    de executar o workflow.
+    """
+    for key in ("qwen_edit_2511_q3_k_m", "qwen_edit_2511_q4_0"):
+        plano = mr.download_plan(key)
+        papeis = [i["role"] for i in plano]
+        assert "diffusion_model" in papeis
+        assert "text_encoder" in papeis, f"{key} sem text encoder"
+        assert "vae" in papeis, f"{key} sem VAE"
+        destinos = {i["role"]: i["dest"] for i in plano}
+        assert destinos["diffusion_model"] == "unet", (
+            "GGUF vai em models/unet, nao diffusion_models")
+        assert destinos["text_encoder"] == "text_encoders"
+        assert destinos["vae"] == "vae"
+
+        # download_gb do registry tem de bater com a soma real do plano.
+        soma = sum(i["size_gb"] or 0 for i in plano)
+        declarado = mr.get_model(key)["download_gb"]
+        assert abs(soma - declarado) < 1.5, (
+            f"{key}: plano soma {soma:.2f} GB mas registry diz {declarado}")
+
+
+def test_disco_exigido_cobre_o_download_completo():
+    for key in mr.model_keys():
+        m = mr.get_model(key)
+        assert m["disk_gb"] >= m["download_gb"], (
+            f"{key}: disco {m['disk_gb']} < download {m['download_gb']}")
+
+
+def test_verificacao_de_arquivo_remoto_existe_e_sugere_o_nome_certo():
+    """A funcao que teria evitado o 404 precisa detectar caixa errada."""
+    import types
+
+    chamadas = {}
+
+    class FakeApi:
+        def list_repo_files(self, repo):
+            chamadas[repo] = chamadas.get(repo, 0) + 1
+            return ["qwen-image-edit-2511-Q3_K_M.gguf",
+                    "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+                    "split_files/vae/qwen_image_vae.safetensors"]
+
+    fake = types.ModuleType("huggingface_hub")
+    fake.HfApi = FakeApi
+    real = sys.modules.get("huggingface_hub")
+    sys.modules["huggingface_hub"] = fake
+    try:
+        # Nome correto: tudo existe.
+        for it in mr.verify_remote_files("qwen_edit_2511_q3_k_m"):
+            assert it["exists"] is True, it
+
+        # Nome com caixa errada (o bug original) tem de ser pego, com dica.
+        reg = mr.load_registry()
+        reg["models"]["qwen_edit_2511_q3_k_m"]["file"] = (
+            "Qwen-Image-Edit-2511-Q3_K_M.gguf")
+        res = mr.verify_remote_files("qwen_edit_2511_q3_k_m", reg)
+        difusor = next(i for i in res if i["role"] == "diffusion_model")
+        assert difusor["exists"] is False, "404 nao foi detectado"
+        assert difusor["hint"] == "qwen-image-edit-2511-Q3_K_M.gguf", (
+            f"nao sugeriu o nome certo: {difusor['hint']}")
+    finally:
+        if real is not None:
+            sys.modules["huggingface_hub"] = real
+        else:
+            del sys.modules["huggingface_hub"]
+
+
+def test_celula_de_download_verifica_antes_de_baixar():
+    for nb_path in (NB1, NB2):
+        _, _, celulas = _nb(nb_path)
+        cel = next(c for c in celulas if "hf_hub_download" in c)
+        i_ver = cel.index("verify_remote_files")
+        i_dl = cel.index("hf_hub_download(")
+        assert i_ver < i_dl, (
+            f"{nb_path.name}: baixa antes de verificar os nomes")
+        assert "download_plan" in cel, "nao usa o plano completo"
+        assert "SystemExit" in cel, "nao para quando o arquivo nao existe"
+        assert "hint" in cel, "nao mostra o nome correto sugerido"
+        # Nome de arquivo do modelo nao pode estar hardcoded. Filtrar por
+        # extensao ('.gguf' num set de sufixos) e legitimo; o que nao pode
+        # e o nome completo do peso.
+        for m in mr.load_registry()["models"].values():
+            if m.get("file"):
+                assert m["file"] not in cel, (
+                    f"{nb_path.name}: {m['file']} hardcoded fora do registry")
 
 
 if __name__ == "__main__":

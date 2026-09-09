@@ -377,6 +377,94 @@ def commercial_candidates(registry: dict[str, Any] | None = None) -> list[str]:
 # Ambiente / saida
 # ----------------------------------------------------------------------
 
+def download_plan(key: str, registry: dict[str, Any] | None = None
+                  ) -> list[dict[str, Any]]:
+    """Lista COMPLETA do que precisa ser baixado para o modelo rodar.
+
+    Existe porque um GGUF sozinho nao roda: o UnetLoaderGGUF carrega so o
+    difusor, e o workflow ainda precisa do text encoder e do VAE. Sem
+    listar tudo aqui, o notebook baixaria 10 GB e so descobriria a falta
+    na hora de executar.
+    """
+    m = get_model(key, registry)
+    itens: list[dict[str, Any]] = []
+    if m.get("file"):
+        itens.append({
+            "role": "diffusion_model",
+            "repo": m["repo"],
+            "file": m["file"],
+            "dest": "unet",
+            "size_gb": m.get("file_size_gb"),
+            "verified": m.get("file_verified", False),
+        })
+    else:
+        itens.append({
+            "role": "snapshot",
+            "repo": m["repo"],
+            "file": None,
+            "dest": ".",
+            "size_gb": m.get("download_gb"),
+            "verified": False,
+        })
+    for aux in m.get("auxiliary_files") or []:
+        itens.append({
+            "role": aux["role"],
+            "repo": aux["repo"],
+            "file": aux["file"],
+            "dest": aux.get("dest", "."),
+            "size_gb": aux.get("size_gb"),
+            "verified": True,
+        })
+    return itens
+
+
+def verify_remote_files(key: str, registry: dict[str, Any] | None = None
+                        ) -> list[dict[str, Any]]:
+    """Confere no HF que cada arquivo do plano existe, ANTES de baixar.
+
+    Motivado por um erro real: o registry trazia
+    'Qwen-Image-Edit-2511-Q3_K_M.gguf' (inventado) enquanto o repo publica
+    'qwen-image-edit-2511-Q3_K_M.gguf' (minusculo). O download quebrou com
+    404 depois de ja ter comecado. Uma listagem barata da arvore do repo
+    pega isso em segundos e ainda sugere o nome certo.
+
+    Requer rede. Cada item ganha 'exists': True/False/None (indeterminado).
+    """
+    from huggingface_hub import HfApi
+
+    api = HfApi()
+    cache: dict[str, list[str] | None] = {}
+    resultado = []
+    for item in download_plan(key, registry):
+        if item["file"] is None:
+            item = {**item, "exists": None, "hint": None}
+            resultado.append(item)
+            continue
+        repo = item["repo"]
+        if repo not in cache:
+            try:
+                cache[repo] = list(api.list_repo_files(repo))
+            except Exception:
+                cache[repo] = None
+        arquivos = cache[repo]
+        if arquivos is None:
+            resultado.append({**item, "exists": None, "hint": None})
+            continue
+        existe = item["file"] in arquivos
+        dica = None
+        if not existe:
+            alvo = item["file"].lower()
+            iguais = [a for a in arquivos if a.lower() == alvo]
+            base = alvo.rsplit("/", 1)[-1]
+            parecidos = [a for a in arquivos
+                         if a.lower().rsplit("/", 1)[-1] == base]
+            dica = (iguais or parecidos or None)
+            if dica:
+                dica = dica[0]
+        resultado.append({**item, "exists": existe, "hint": dica})
+    return resultado
+
+
 def free_disk_gb(path: str | Path = "/") -> float:
     return shutil.disk_usage(str(path)).free / 1024 ** 3
 

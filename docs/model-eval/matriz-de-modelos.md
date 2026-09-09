@@ -239,3 +239,42 @@ pontos.
 
 A decisão artística é humana. Não há OVERALL, não é média aritmética, e o
 agente não escolhe vencedor.
+
+## Download dos pesos (correcao pos-404)
+
+A primeira execucao real da celula de download falhou em producao com
+`RemoteEntryNotFoundError: 404`: o nome do GGUF no registry tinha sido
+inferido, nao conferido. O repo `unsloth/Qwen-Image-Edit-2511-GGUF`
+publica os arquivos com **prefixo em minusculo**:
+
+- correto ... `qwen-image-edit-2511-Q3_K_M.gguf` (9.92 GB)
+- errado .... `Qwen-Image-Edit-2511-Q3_K_M.gguf` (nao existe -> 404)
+
+Segundo defeito encontrado na mesma investigacao: **o GGUF sozinho nao
+roda**. `UnetLoaderGGUF` carrega apenas o difusor; sem o text encoder e o
+VAE o workflow so falharia depois de ~10 GB baixados. O conjunto completo
+esta agora em `auxiliary_files` no registry.
+
+Plano real por modelo Qwen (`mr.download_plan(key)`):
+
+| role | repo | arquivo | destino | GB |
+|---|---|---|---|---|
+| diffusion_model | unsloth/Qwen-Image-Edit-2511-GGUF | qwen-image-edit-2511-Q3_K_M.gguf | `unet/` | 9.92 |
+| text_encoder | Comfy-Org/Qwen-Image_ComfyUI | qwen_2.5_vl_7b_fp8_scaled.safetensors | `text_encoders/` | 9.38 |
+| vae | Comfy-Org/Qwen-Image_ComfyUI | qwen_image_vae.safetensors | `vae/` | 0.25 |
+
+Total Q3_K_M **19.6 GB**, Q4_0 **20.7 GB** (`download_estimated: false`).
+No T4 do usuario (65.3 GB livres) continua `READY`.
+
+Duas defesas foram adicionadas para que isso nao se repita:
+
+1. `mr.verify_remote_files(key)` lista a arvore do repo no Hugging Face e
+   marca cada arquivo como existente ou nao. Quando nao existe, compara
+   sem diferenciar maiusculas e devolve o nome real em `hint`. A celula de
+   download chama isso **antes** de baixar e aborta com `SystemExit`
+   mostrando repo, nome errado e nome correto.
+2. O campo `file_verified` no registry marca os nomes ja conferidos contra
+   a arvore real do repo. Nome nao verificado nao deve ser usado.
+
+A verificacao custa uma chamada de API e roda antes de qualquer byte de
+peso ser transferido.
