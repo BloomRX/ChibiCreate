@@ -1009,6 +1009,41 @@ def test_nenhuma_celula_tem_condicional_por_modelo():
                     f"{nb_path.name}: condicional por modelo ({key})")
 
 
+
+def test_referencias_sao_caminhos_resolviveis_pelo_runner():
+    """Nome solto ('face.png') quebrou a execucao real: o runner resolve
+    referencia relativa a characters/<id>/, nao a reference/."""
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT / "scripts"))
+    from chibi import paths as _paths
+
+    ref = ROOT / "characters/waifu_001/reference"
+    desejadas = [str(pathlib_rel(ref / n)) for n in ("face.png", "outfit.png")]
+    plano = mr.plan_references(
+        "qwen_edit_2511_q3_k_m",
+        str(pathlib_rel(ref / "full_body.png")), "full_body", desejadas)
+
+    cp = _paths.CharacterPaths("waifu_001")
+    for rel in plano.used:
+        cand = Path(rel)
+        rp = cand if cand.is_file() else cp.root / rel
+        assert rp.is_file(), f"runner nao acharia a referencia: {rp}"
+    # O papel gravado no recipe sai do nome do arquivo: nao pode virar caminho.
+    assert [Path(r).stem for r in plano.used] == ["face", "outfit"]
+
+
+def pathlib_rel(p: Path) -> Path:
+    """Caminho relativo a raiz do repo (como o notebook monta)."""
+    return p.relative_to(ROOT)
+
+
+def test_notebook_nao_passa_nome_solto_como_referencia():
+    _, _, celulas = _nb(NB1)
+    cel = next(c for c in celulas if "DESEJADAS" in c)
+    assert "REF_DIR / n" in cel, (
+        "referencia precisa ser caminho completo, nao nome solto")
+
+
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
