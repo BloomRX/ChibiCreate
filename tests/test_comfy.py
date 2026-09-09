@@ -1516,48 +1516,57 @@ def test_unused_image_slots_are_pruned_not_faked():
         assert "image1" in enc["inputs"]
 
 
-def test_primary_image_role_distinguishes_stage1_output():
-    """Rotular a saida do FLUX como 'full_body' inverteria a leitura.
+def test_primary_image_role_uses_provenance_not_filename():
+    """Imagem de fora do kit = stage1_output, qualquer que seja o nome.
 
-    O teste A edita o original; B e C editam a saida do FLUX. Se o recipe
-    nao distinguir, a analise nao consegue separar os tres casos.
+    Deduzir o papel por substring no nome ("output"/"flux") classificaria
+    errado um arquivo renomeado, e o recipe descreveria um experimento
+    diferente do que rodou. A regra correta e a procedencia: dentro de
+    reference/ => referencia da personagem; fora => saida do estagio 1.
     """
+    import json as _json
     import tempfile
+
+    from PIL import Image
 
     from chibi import experiment
 
-    with tempfile.TemporaryDirectory() as td:
-        falso = Path(td) / "output.png"
-        from PIL import Image
-        Image.new("RGBA", (16, 16), (0, 0, 0, 255)).save(falso)
-
+    def rodar(input_rel, refs=()):
         res = experiment.run_qwen_edit(
             "waifu_001",
-            input_rel=str(falso),
+            input_rel=str(input_rel),
             prompt="x",
             model_key="qwen_image_edit_2511",
             workflow_name="experimental/qwen_edit_multiref",
+            extra_refs=list(refs),
             dry_run=True,
         )
-        import json as _json
         rec = _json.loads((res.run_dir / "recipe.json").read_text())
-        assert rec["primary_image_role"] == "stage1_output", rec.get(
-            "primary_image_role"
-        )
-        shutil.rmtree(res.run_dir.parent.parent, ignore_errors=True)
+        # Remove tambem model_eval/<modelo>/, senao o teste deixa
+        # diretorio vazio em experiments/ e polui o repo.
+        shutil.rmtree(res.run_dir.parent, ignore_errors=True)
+        return rec
 
-    res = experiment.run_qwen_edit(
-        "waifu_001",
-        input_rel="reference/full_body.png",
-        prompt="x",
-        model_key="qwen_image_edit_2511",
-        workflow_name="experimental/qwen_edit_multiref",
-        dry_run=True,
-    )
-    import json as _json
-    rec = _json.loads((res.run_dir / "recipe.json").read_text())
-    assert rec["primary_image_role"] == "full_body", rec.get("primary_image_role")
-    shutil.rmtree(res.run_dir.parent.parent, ignore_errors=True)
+    with tempfile.TemporaryDirectory() as td:
+        # Nomes que NAO contem "output" nem "flux": a heuristica antiga
+        # rotularia estes como "primary_image".
+        for nome in ("run_003_stage1.png", "etapa1.png", "z.png"):
+            externo = Path(td) / nome
+            Image.new("RGBA", (16, 16), (0, 0, 0, 255)).save(externo)
+            rec = rodar(externo, ["reference/full_body.png"])
+            assert rec["primary_image_role"] == "stage1_output", (
+                f"{nome} veio de fora de reference/ e deveria ser "
+                f"stage1_output, veio {rec['primary_image_role']}"
+            )
+            # A referencia adicional nao pode virar a imagem principal.
+            assert rec["references"][0]["role"] == "stage1_output"
+            assert rec["reference_count"] == 2
+
+    # Imagens do proprio kit mantem o nome como papel.
+    for arquivo, esperado in [("full_body.png", "full_body"),
+                              ("outfit.png", "outfit")]:
+        rec = rodar(f"reference/{arquivo}")
+        assert rec["primary_image_role"] == esperado, rec["primary_image_role"]
 
 
 def test_flux_to_qwen_notebook_is_executable_as_written():
@@ -1578,7 +1587,26 @@ def test_flux_to_qwen_notebook_is_executable_as_written():
 
     assert "qwen-refiner" in src
     assert "arena/01a07ece-chibicreate" in src, "branch errada no clone"
-    assert "run_001/output.png" in src, "nao ancora no run_001 do FLUX"
+    # O PRIMARY EXPERIMENT parte do run_003, nao do run_001: run_003
+    # preserva o design e o Qwen so precisa puxar as proporcoes.
+    assert "FLUX_RUN003" in src, "notebook nao usa o run_003 como entrada"
+    assert "PRIMARY EXPERIMENT" in src, "PRIMARY nao esta destacado"
+    assert "run_003" in src
+
+    # A celula do PRIMARY tem de rodar ANTES das comparacoes A/B/C.
+    i_primary = src.index("PRIMARY EXPERIMENT · FLUX run_003")
+    for rotulo in ("Comparação A", "Comparação B", "Comparação C"):
+        assert src.index(rotulo) > i_primary, f"{rotulo} vem antes do PRIMARY"
+
+    # O PRIMARY usa as duas referencias de design.
+    celulas = ["".join(c["source"]) for c in nb["cells"]]
+    exec_primary = next(
+        c for c in celulas
+        if "model-eval" in c and "FLUX_RUN003" in c and "outfit.png" in c)
+    assert "--ref reference/full_body.png --ref reference/outfit.png" in exec_primary
+
+    # face.png nao entra: o node Core so comporta 3 imagens no total.
+    assert "--ref reference/face.png" not in src
     assert "BASELINE_HYPOTHESIS" in src, "denoise sem marcar hipotese"
 
     # Nao pode rodar o FLUX de novo nem pedir credencial.

@@ -130,3 +130,55 @@ Perguntas desta rodada:
   seed 42 no Qwen não reproduz o ruído do FLUX.
 - O TESTE C não usa `face.png` (limite de 3 slots).
 - Determinismo **não** é afirmado; `compare_runs` mede e reporta.
+
+
+## PRIMARY EXPERIMENT (correção pós-inspeção visual)
+
+Após inspeção visual dos resultados FLUX, o usuário determinou que
+`run_003/output.png` é a entrada correta do estágio Qwen — **não**
+`run_001/output.png`.
+
+| | chibi | design preservado |
+|---|---|---|
+| `run_001` | mais forte | reinterpretou mais roupa e design |
+| **`run_003`** | menos chibi | preserva estrutura, roupa, capa, cabelo, ornamentos |
+
+O estágio Qwen cobre exatamente o que falta ao `run_003`: partir de um design
+fiel e aproximar as proporções do chibi alvo. Partir do `run_001` seria pedir
+ao Qwen que reconstruísse um design já perdido no estágio 1.
+
+```
+Original -> FLUX run_003 (já existe) -> Qwen -> resultado final
+```
+
+- `primary_image_role`: `stage1_output`
+- referências: `full_body.png`, `outfit.png`
+- `face.png` fica fora: `TextEncodeQwenImageEditPlus` (Core) comporta 3
+  imagens no total, e a principal já ocupa `image1`.
+
+Objetivo declarado: manter a identidade do `run_003`, preservar o design
+original, aproximar as proporções do chibi, não inventar roupa e manter
+cabelo, chifres e ornamentos.
+
+### Rodadas
+
+| pasta | pipeline | image1 | image2 | image3 |
+|---|---|---|---|---|
+| `primary_run003_2refs` | **PRIMARY** | saída run_003 | `full_body` | `outfit` |
+| `cmp_a_qwen_only` | Qwen sozinho | `full_body` | — | — |
+| `cmp_b_run003_1ref` | sem `outfit` | saída run_003 | `full_body` | — |
+| `cmp_c_run001_2refs` | entrada run_001 | saída run_001 | `full_body` | `outfit` |
+
+A/B/C são **comparação**, não candidatos concorrentes: A isola o Qwen sozinho,
+B isola o efeito da segunda referência, C isola o efeito de trocar a entrada
+do estágio 1 — ou seja, mede a própria decisão registrada acima.
+
+A comparação C é pulada automaticamente se `run_001` não vier no ZIP.
+
+### Limitações desta rodada
+
+- A escolha do `run_003` vem de **inspeção visual humana**, não de métrica.
+- `denoise` continua **não calibrado** (`BASELINE_HYPOTHESIS`).
+- Um run por rodada: não afirma determinismo.
+- `face.png` fora de todas as rodadas.
+

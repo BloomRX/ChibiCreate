@@ -655,10 +655,19 @@ def run_qwen_edit(
     # O papel da imagem principal NAO e sempre "full_body": no experimento
     # FLUX -> QWEN ela e a saida do estagio anterior. Rotular errado
     # inverteria a leitura do experimento.
-    main_role = "primary_image"
-    if input_path.name == "full_body.png":
-        main_role = "full_body"
-    elif "output" in input_path.name or "flux" in input_path.name.lower():
+    # A regra e a PROCEDENCIA, nao o nome do arquivo: uma imagem vinda de
+    # fora do kit de referencias da personagem so pode ser saida de um
+    # estagio anterior. Deduzir por substring ("output"/"flux") classificaria
+    # errado qualquer arquivo renomeado, e ai o recipe descreveria um
+    # experimento diferente do que rodou.
+    ref_dir = (cp.root / "reference").resolve()
+    try:
+        interna = input_path.resolve().parent == ref_dir
+    except OSError:
+        interna = False
+    if interna:
+        main_role = input_path.stem
+    else:
         main_role = "stage1_output"
     roles = [main_role] + [Path(r).stem for r in extra_refs]
     recipe["reference_count"] = len(all_refs)
