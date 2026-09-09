@@ -1326,6 +1326,154 @@ def test_wai_workflow_is_core_only_and_independent():
     assert (base / "flux2_klein_edit" / "v2.json").is_file()
 
 
+
+def test_qwen_multiref_routes_images_to_correct_slots():
+    """image1 = imagem a editar; image2/image3 = referencias de design.
+
+    Trocar a ordem inverte o experimento: o Qwen redesenharia a referencia em
+    vez do chibi. E image1 tambem alimenta o latente inicial.
+    """
+    import json
+
+    wf = json.loads(
+        (ROOT / "workflows" / "experimental" / "qwen_edit_multiref" / "v1.json")
+        .read_text(encoding="utf-8")
+    )
+    n = {k: v for k, v in wf.items() if not k.startswith("_")}
+
+    enc = next(v for v in n.values()
+               if v["class_type"] == "TextEncodeQwenImageEditPlus"
+               and "image1" in v["inputs"])
+    assert enc["inputs"]["image1"] == ["4", 0]
+    assert enc["inputs"]["image2"] == ["11", 0]
+    assert enc["inputs"]["image3"] == ["12", 0]
+
+    # img2img real: o latente sai da imagem principal, nao de canvas vazio.
+    ks = next(v for v in n.values() if v["class_type"] == "KSampler")
+    lat = ks["inputs"]["latent_image"][0]
+    assert n[lat]["class_type"] == "VAEEncode"
+    assert n[lat]["inputs"]["pixels"] == ["4", 0]
+    assert "EmptySD3LatentImage" not in {v["class_type"] for v in n.values()}
+
+
+def test_qwen_multiref_uses_core_node_within_its_limit():
+    """O node Core aceita 3 imagens. Nao inventar image4/image5.
+
+    image4+ so existe em custom node de terceiro (Comfyui-QwenEditUtils), que
+    exigiria autorizacao explicita.
+    """
+    import json
+
+    wf = json.loads(
+        (ROOT / "workflows" / "experimental" / "qwen_edit_multiref" / "v1.json")
+        .read_text(encoding="utf-8")
+    )
+    n = {k: v for k, v in wf.items() if not k.startswith("_")}
+    enc = next(v for v in n.values()
+               if v["class_type"] == "TextEncodeQwenImageEditPlus"
+               and "image1" in v["inputs"])
+    for proibido in ("image4", "image5"):
+        assert proibido not in enc["inputs"], (
+            f"{proibido} nao existe no node Core; exigiria custom node"
+        )
+    imagens = [k for k in enc["inputs"] if k.startswith("image")]
+    assert len(imagens) <= 3, imagens
+
+    CORE = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage",
+            "TextEncodeQwenImageEditPlus", "VAEEncode", "KSampler",
+            "VAEDecode", "SaveImage"}
+    usados = {v["class_type"] for v in n.values()}
+    assert usados <= CORE, f"node nao-Core: {usados - CORE}"
+
+
+def test_qwen_multiref_does_not_replace_official_workflow():
+    """O experimento nao pode alterar o workflow Qwen existente."""
+    import hashlib
+
+    base = ROOT / "workflows" / "experimental"
+    original = base / "qwen_edit_minimal" / "v1.json"
+    assert original.is_file(), "workflow Qwen original sumiu"
+    assert hashlib.sha256(original.read_bytes()).hexdigest().startswith(
+        "aec4b85732e0d937"
+    ), "workflow Qwen original foi modificado"
+    assert (base / "qwen_edit_multiref" / "v1.json").is_file()
+    assert (base / "flux2_klein_edit" / "v1.json").is_file()
+    assert (base / "flux2_klein_edit" / "v2.json").is_file()
+
+
+def test_pixel_hash_is_separate_from_file_hash():
+    """Pixel hash e hash de arquivo respondem perguntas diferentes.
+
+    Reencodar um PNG muda os bytes e mantem a imagem. Se os dois colidissem
+    no mesmo campo, "arquivo diferente" viraria "imagem diferente".
+    """
+    import io
+    import tempfile
+    from PIL import Image
+
+    from chibi.experiment import pixel_sha256
+    from chibi.hashing import sha256_file
+
+    with tempfile.TemporaryDirectory() as td:
+        a = Path(td) / "a.png"
+        b = Path(td) / "b.png"
+        img = Image.new("RGBA", (8, 8), (10, 20, 30, 255))
+        img.save(a)
+        img.save(b, optimize=True)  # mesmos pixels, bytes potencialmente diferentes
+
+        assert pixel_sha256(a) == pixel_sha256(b), "pixels iguais devem casar"
+
+        c = Path(td) / "c.png"
+        Image.new("RGBA", (8, 8), (11, 20, 30, 255)).save(c)
+        assert pixel_sha256(a) != pixel_sha256(c), "pixels diferentes devem diferir"
+        assert pixel_sha256(a) != sha256_file(a), "pixel hash nao e hash de arquivo"
+
+
+def test_experiment_aborts_before_gpu_on_missing_inputs():
+    """Dependencia faltando aborta ANTES de tocar na GPU, sem fallback."""
+    from chibi import experiment
+
+    try:
+        experiment.run_qwen_edit(
+            "waifu_001",
+            input_rel="reference/__nao_existe__.png",
+            prompt="x",
+            model_key="qwen_image_edit_2511",
+            workflow_name="experimental/qwen_edit_multiref",
+            dry_run=True,
+        )
+    except experiment.ExperimentError as exc:
+        assert "nao encontrado" in str(exc)
+    else:
+        raise AssertionError("input inexistente deveria abortar")
+
+    try:
+        experiment.run_qwen_edit(
+            "waifu_001",
+            prompt="x",
+            extra_refs=("reference/__nada__.png",),
+            model_key="qwen_image_edit_2511",
+            workflow_name="experimental/qwen_edit_multiref",
+            dry_run=True,
+        )
+    except experiment.ExperimentError as exc:
+        assert "referencia extra nao encontrada" in str(exc)
+    else:
+        raise AssertionError("referencia inexistente deveria abortar")
+
+
+def test_recipe_has_no_credentials():
+    """Recipe e logs nao podem carregar segredo.
+
+    A URL do ComfyUI pode conter token (tunel do Colab); ela e redigida.
+    """
+    from chibi.comfy_client import redact_url
+
+    redigida = redact_url("https://user:s3cr3t@abc-8188.trycloudflare.com/x")
+    assert "s3cr3t" not in redigida
+    assert "user" not in redigida or "***" in redigida
+
+
 if __name__ == "__main__":
     funcs = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

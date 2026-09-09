@@ -19,6 +19,7 @@ Estrutura por execucao:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -51,6 +52,15 @@ MODEL_CANDIDATES: dict[str, dict[str, str]] = {
         "workflow": "experimental/flux2_klein_edit",
         "environment": "colab_flux2",
         "label": "FLUX.2 [klein] 4B",
+    },
+    # Estagio 2 do experimento FLUX -> QWEN. Mesmo modelo do "qwen-edit",
+    # workflow diferente (multi-referencia + img2img a partir da imagem
+    # principal). Separado para nao mexer no candidato original.
+    "qwen-refiner": {
+        "model_key": "qwen_image_edit_2511",
+        "workflow": "experimental/qwen_edit_multiref",
+        "environment": "cloud",
+        "label": "Qwen-Image-Edit-2511 (refiner)",
     },
     # Candidato 3: checkpoint SDXL. Ecossistema DIFERENTE dos outros dois —
     # nao e modelo de edicao, so tem img2img. Ver o _comment do workflow.
@@ -338,6 +348,27 @@ def build_recipe(
     }
 
 
+def pixel_sha256(path: Path) -> str | None:
+    """Hash dos PIXELS, nao do arquivo.
+
+    Dois PNGs podem ter bytes diferentes (metadata, timestamp, compressao) e
+    a mesma imagem. Comparar so o sha256 do arquivo confundiria "arquivo
+    diferente" com "imagem diferente" — e a pergunta do experimento e sobre
+    a imagem. Fica em campo SEPARADO de output_sha256, nunca no lugar dele.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        with Image.open(path) as im:
+            return hashlib.sha256(
+                im.convert("RGBA").tobytes()
+            ).hexdigest()
+    except Exception:
+        return None
+
+
 def _now() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -366,11 +397,19 @@ def run_qwen_edit(
     if not cp.root.is_dir():
         raise ExperimentError(f"personagem '{character_id}' nao existe")
 
-    input_path = cp.root / input_rel
+    # A imagem principal pode vir de fora do personagem: no experimento
+    # FLUX -> QWEN ela e a SAIDA do estagio anterior. Caminho absoluto ou
+    # relativo ao repo tem precedencia sobre reference/.
+    external = Path(input_rel)
+    if external.is_file():
+        input_path = external
+    else:
+        input_path = cp.root / input_rel
     if not input_path.is_file():
         raise ExperimentError(
             f"input nao encontrado: {input_path}. Rode 'chibi flow01 "
-            f"{character_id}' antes."
+            f"{character_id}' antes, ou aponte --input para a saida do "
+            "estagio anterior."
         )
 
     # Multi-referencia: cada ref extra vira INPUT_IMAGE_2, _3, ... O workflow
@@ -378,7 +417,8 @@ def run_qwen_edit(
     # aceita na CLI e silenciosamente ignorada no grafo.
     extra_paths: list[Path] = []
     for rel in extra_refs:
-        rp = cp.root / rel
+        cand = Path(rel)
+        rp = cand if cand.is_file() else cp.root / rel
         if not rp.is_file():
             raise ExperimentError(f"referencia extra nao encontrada: {rp}")
         extra_paths.append(rp)
@@ -456,13 +496,20 @@ def run_qwen_edit(
         values[f"INPUT_IMAGE_{i}"] = rp.name
 
     # Guarda: referencia passada mas sem lugar no grafo = ref ignorada.
+    # Este e o modo de falhar mais perigoso do experimento — a execucao
+    # termina normalmente e a imagem sai plausivel, so que a referencia nunca
+    # entrou. Abortar ANTES de gastar GPU, sem fallback silencioso.
     _wf_text = json.dumps(workflow)
     for i in range(2, len(extra_paths) + 2):
         if f"%%INPUT_IMAGE_{i}%%" not in _wf_text:
+            disponiveis = sum(
+                1 for j in range(2, 12) if f"%%INPUT_IMAGE_{j}%%" in _wf_text
+            )
             raise ExperimentError(
-                f"workflow '{workflow_name}/{workflow_version}' nao tem "
-                f"%%INPUT_IMAGE_{i}%%: a referencia extra seria ignorada. "
-                "Use um workflow multi-referencia (ex: v2)."
+                f"workflow '{workflow_name}/{workflow_version}' comporta "
+                f"{disponiveis} referencia(s) extra(s), mas foram passadas "
+                f"{len(extra_paths)}. A referencia #{i} seria IGNORADA "
+                "silenciosamente. Nenhum fallback aplicado."
             )
 
     # o input extra tambem vai junto, para o run ser auditavel sozinho
@@ -557,14 +604,33 @@ def run_qwen_edit(
         timings=timings,
         cost=cost,
     )
+    if output_path and output_path.is_file():
+        # Campo proprio: "imagem igual" e "arquivo igual" sao perguntas
+        # diferentes e nao podem colidir no mesmo campo.
+        recipe["output_pixel_sha256"] = pixel_sha256(output_path)
+        recipe["pixel_hash_note"] = (
+            "Hash dos pixels RGBA decodificados. NAO substitui "
+            "output_sha256 (hash do arquivo)."
+        )
+    recipe["input_pixel_sha256"] = pixel_sha256(local_input)
+
     all_refs = [local_input] + local_extras
+    # O papel da imagem principal NAO e sempre "full_body": no experimento
+    # FLUX -> QWEN ela e a saida do estagio anterior. Rotular errado
+    # inverteria a leitura do experimento.
+    main_role = "primary_image"
+    if input_path.name == "full_body.png":
+        main_role = "full_body"
+    elif "output" in input_path.name or "flux" in input_path.name.lower():
+        main_role = "stage1_output"
+    roles = [main_role] + [Path(r).stem for r in extra_refs]
     recipe["reference_count"] = len(all_refs)
     recipe["references"] = [
-        {"role": role, "file": rp.name, "sha256": sha256_file(rp)}
-        for role, rp in zip(
-            ["full_body"] + [Path(r).stem for r in extra_refs], all_refs
-        )
+        {"role": role, "file": rp.name, "sha256": sha256_file(rp),
+         "pixel_sha256": pixel_sha256(rp)}
+        for role, rp in zip(roles, all_refs)
     ]
+    recipe["primary_image_role"] = main_role
     if dry_run:
         recipe["dry_run"] = True
     recipe_path = run_dir / "recipe.json"
