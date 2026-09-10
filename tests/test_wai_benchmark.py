@@ -72,13 +72,78 @@ def test_source_url_e_o_modelo_pedido():
     assert "827184" in mr.get_model(KEY)["source_url"]
 
 
-def test_notebook_exige_a_versao_antes_de_baixar():
-    """Sem modelVersionId o download tem de parar, nao improvisar."""
+def test_checkpoint_vem_do_google_drive_sem_tocar_no_civitai():
+    """O usuario ja tem o arquivo: nada de download nem upload."""
     src = _nb_source()
-    assert "CIVITAI_VERSION_ID" in src
-    assert "CKPT_SHA256_ESPERADO" in src
-    assert "BLOCKED — fixe a versao do checkpoint na celula 4" in src
-    assert "BLOCKED — SHA256 do checkpoint diverge do declarado." in src
+    assert "from google.colab import drive" in src
+    assert "drive.mount(\"/content/drive\")" in src
+    assert '"source": "google_drive"' in src
+    # Nenhum caminho de download do checkpoint.
+    assert "civitai.com/api/download" not in src
+    assert "BAIXAR_CHECKPOINT" not in src
+    assert "files.upload" not in src
+
+
+def test_caminho_do_drive_e_parametro_sem_nome_inventado():
+    src = _nb_source()
+    assert ('CKPT_DRIVE_PATH = "ComfyUI_Data/models/checkpoints/'
+            'waiIllustriousSDXL_v170.safetensors"  #@param') in src
+    # Ausente => erro claro + lista do que existe, nunca um chute.
+    assert "BLOCKED — checkpoint nao encontrado no caminho informado" in src
+    assert "Nao vamos adivinhar nome de arquivo" in src
+    assert "Corrija CKPT_DRIVE_PATH no formulario acima" in src
+
+
+def test_valida_que_e_checkpoint_sdxl_antes_da_inferencia():
+    """O 2o text encoder e o que distingue SDXL de SD 1.5/2.x."""
+    src = _nb_source()
+    assert "conditioner.embedders.1." in src   # OpenCLIP bigG => SDXL
+    assert "model.diffusion_model." in src     # UNet => e um checkpoint
+    assert "BLOCKED — nao parece um checkpoint SDXL" in src
+    assert "BLOCKED — checkpoint nao passou na validacao SDXL." in src
+    # Header lido sem carregar os pesos.
+    assert 'struct.unpack("<Q", f.read(8))' in src
+
+
+def test_nao_move_nem_modifica_o_original_do_drive():
+    src = _nb_source()
+    assert "Arquivo original do Drive NAO foi movido nem modificado." in src
+    for proibido in ("shutil.move", "origem.unlink", "origem.rename",
+                     "os.remove(origem)"):
+        assert proibido not in src, proibido
+    # Symlink primeiro; copia so se o symlink nao servir.
+    assert "destino.symlink_to(origem)" in src
+    i = src.index("destino.symlink_to(origem)")
+    j = src.index("shutil.copy2(origem, destino)")
+    assert i < j, "a copia tem de ser o fallback, nao o caminho principal"
+
+
+def test_version_id_desconhecido_nao_bloqueia_a_execucao():
+    """SHA256 identifica o arquivo melhor que um id de catalogo."""
+    src = _nb_source()
+    assert '"unknown/pending"' in src
+    assert "Nao bloqueia a execucao" in src
+    # O gate de execucao olha o SHA e a validacao, nunca o version id.
+    exec_cell = src.split("#@title 9. Executar")[1].split("#@title 10.")[0]
+    assert 'VERSAO.get("sha256")' in exec_cell
+    assert 'VERSAO.get("sdxl_validated")' in exec_cell
+    assert "civitai_model_version_id" not in exec_cell
+
+
+def test_recipe_registra_procedencia_do_drive():
+    src = _nb_source()
+    for campo in ('"source": VERSAO["source"]',
+                  '"drive_logical_path": VERSAO["drive_logical_path"]',
+                  '"link_method": VERSAO["link_method"]',
+                  '"sdxl_validation": VERSAO["sdxl_validation"]'):
+        assert campo in src, campo
+    assert 'CAMINHO_LOGICO = f"My Drive/{CKPT_DRIVE_PATH}"' in src
+
+
+def test_nao_guarda_credenciais():
+    src = _nb_source()
+    for proibido in ("CIVITAI_TOKEN", "HF_TOKEN", "api_key", "password"):
+        assert proibido not in src, proibido
 
 
 # ----------------------------------------------------------------------
@@ -467,7 +532,7 @@ def test_nao_toca_no_baseline_flux():
     src = _nb_source()
     assert "flux2_klein_4b_eval.ipynb" not in src.replace(
         "notebooks/flux2_klein_4b_eval.ipynb`", "")  # so a mencao no cabecalho
-    for proibido in ("os.remove", "unlink()", "shutil.rmtree"):
+    for proibido in ("os.remove", "shutil.rmtree"):
         assert proibido not in src, proibido
     # A run_003 do FLUX so pode ser LIDA na montagem comparativa.
     for linha in src.split("\n"):

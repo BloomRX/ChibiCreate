@@ -81,26 +81,62 @@ Usamos loaders explícitos (`IPAdapterModelLoader` + `CLIPVisionLoader`) em
 vez do `IPAdapterUnifiedLoader`, que resolve arquivo por preset e pode baixar
 peso sozinho, quebrando o pinning por SHA256.
 
-## Bloqueio de versão — [HUMAN REVIEW REQUIRED]
+## Checkpoint: vem do Google Drive
 
-A diretiva pede `modelVersionId`, arquivo e SHA256 do checkpoint exato de
-`civitai.red/models/827184`.
+O arquivo já existe no Drive do usuário, então o notebook **não baixa e não
+pede upload**. O Civitai não é acessado.
 
-**`civitai.red` e `civitai.com` estão fora da allowlist de egress da sandbox**
-(HTTP 000, handshake TLS interrompido). Portanto:
+```
+My Drive/ComfyUI_Data/models/checkpoints/waiIllustriousSDXL_v170.safetensors
+```
 
-- `civitai_model_version_id: null`
-- `sha256: null`
-- `license_verified: false`
+A célula 4 faz, em ordem: monta o Drive (integração nativa do Colab),
+localiza o arquivo, **valida que é mesmo um checkpoint SDXL**, calcula o
+SHA256 e liga o arquivo ao ComfyUI.
 
-Nada disso foi inventado nem substituído por outra versão por conta própria.
-O notebook tem a **célula 4**, onde você — que enxerga o Civitai no Colab —
-fixa esses valores. A célula 5 confere o SHA256 do arquivo baixado contra o
-que você declarou e **para** se divergir.
+**O original nunca é movido nem modificado.** A ligação tenta `symlink`
+primeiro — instantâneo, sem duplicar ~7 GB — e só cai para cópia se o
+symlink não for legível neste ambiente. O método efetivamente usado
+(`symlink` ou `copia`) vai para o recipe.
 
-> Nota: o repositório já continha uma entrada apontando **v17.0**, também não
-> verificada. A busca indica que a **v14 trocou de modelo-base** (saiu do
-> Illustrious-XL 2.0), então a versão importa e precisa de decisão humana.
+### Validação antes da inferência
+
+Lemos apenas o header do `safetensors` (8 bytes de tamanho + JSON), sem
+carregar os pesos:
+
+| verificação | por quê |
+|---|---|
+| `model.diffusion_model.*` | é um checkpoint, não um LoRA ou VAE solto |
+| `conditioner.embedders.1.*` | **segundo text encoder (OpenCLIP bigG) = SDXL** |
+| `conditioner.embedders.0.*` | primeiro text encoder (CLIP-L) |
+| `first_stage_model.*` | VAE embutido |
+| tamanho ≥ 3 GB | descarta arquivo truncado |
+
+O segundo text encoder é o que distingue SDXL de SD 1.5/2.x. Um LoRA ou um
+SD 1.5 renomeado é recusado com `BLOCKED` antes de qualquer inferência.
+
+### Se o arquivo não estiver lá
+
+Erro claro, e o notebook **lista os `.safetensors` que realmente existem** na
+pasta (ou sobe até o ancestral existente e mostra as subpastas). Você corrige
+`CKPT_DRIVE_PATH` no formulário e reexecuta. Nenhum nome de arquivo é
+adivinhado.
+
+### `modelVersionId` não bloqueia
+
+O `modelVersionId` do Civitai fica `unknown/pending` quando desconhecido e
+**não impede a execução** — o SHA256 do arquivo real identifica o checkpoint
+de forma mais forte que um id de catálogo, e fica gravado no recipe. Os
+metadados podem ser preenchidos depois.
+
+A versão é lida do nome do arquivo (`v170`) e registrada como
+`revision_from_filename`. Nenhum outro WAI/Illustrious é aceito no lugar.
+
+### Nova sessão do Colab
+
+O fluxo é reentrante: montar → localizar → validar → subir o ComfyUI →
+executar. A célula 4 detecta Drive já montado e checkpoint já ligado, então
+reexecutar é barato. Nenhum token ou credencial é armazenado.
 
 ## Licença — pendente de revisão humana
 
@@ -171,10 +207,10 @@ determinismo absoluto.
 2. `Runtime → Change runtime type → T4 GPU`.
 3. **Célula 0** — escolher `CHARACTER_ID` e a **run** (001, 002 ou 003).
 4. **Célula 2** — preflight. Se `BLOCKED`, **pare**: sem fallback silencioso.
-5. **Célula 4** — fixar `modelVersionId`, arquivo e SHA256 lidos no Civitai.
+5. **Célula 4** — montar o Drive e validar o checkpoint. Autorize o acesso
+   quando o Colab pedir; ajuste `CKPT_DRIVE_PATH` se o seu caminho diferir.
 6. **Célula 6** — marcar `ACEITO_INSTALAR_IPADAPTER` (custom node + 2 pesos).
-7. Subir o `.safetensors` do WAI para `/content/ComfyUI/models/checkpoints/`.
-8. Células 7→12 em ordem.
+7. Células 7→12 em ordem.
 
 Para as três runs: repita as células 8→10 mudando `RUN` na célula 0. A
 célula 11 compara 001 × 002; a 12 monta a comparação final.
@@ -215,4 +251,4 @@ WAI mostrar vantagem real em DESIGN_PRESERVATION.
 - `workflows/experimental/wai_illustrious_chibi/v1.json` — rota img2img anterior, mantida
 - `config/model_eval_registry.yaml` → `wai_illustrious_sdxl_v170`
 - `config/models.lock.yaml` → `wai_illustrious_sdxl_v170` (`MODEL_MISSING`)
-- `tests/test_wai_benchmark.py` — 71 testes
+- `tests/test_wai_benchmark.py` — 77 testes
