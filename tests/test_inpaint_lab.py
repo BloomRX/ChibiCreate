@@ -388,3 +388,89 @@ def test_uma_unica_execucao_sem_sweep():
     # nenhuma VARIAVEL de sweep (o texto "sem sweep" nos comentarios e ok)
     import re
     assert not re.search(r"^[A-Z_]*SWEEP[A-Z_]*\s*=", painel, re.M)
+
+
+# ---------------------------------------------------------------------------
+# Paridade com o painel do chibi lab (ajustes de prompt)
+# ---------------------------------------------------------------------------
+
+def _campo_do_form(nome):
+    for ln in _celula("#@title 0.").split("\n"):
+        if ln.startswith(f"{nome} = ") and "#@param" in ln:
+            return ln.split("=", 1)[1].split("#@param")[0].strip().strip('"')
+    raise AssertionError(f"campo {nome} nao encontrado")
+
+
+def test_campos_de_prompt_vem_preenchidos_com_o_preset():
+    presets = _executa_celula0()["PROMPT_PRESETS"]["outfit_repair_v1"]
+    assert _campo_do_form("PROMPT_CUSTOM") == presets["positive"]
+    assert _campo_do_form("NEGATIVE_CUSTOM") == presets["negative"]
+
+
+def test_toggles_de_prompt_comecam_desligados():
+    ns = _executa_celula0()
+    assert ns["USAR_PROMPT_CUSTOM"] is False
+    assert ns["USAR_NEGATIVE_CUSTOM"] is False
+    assert ns["PROMPT_EDITADO"] is False
+    assert ns["PROMPT_SOURCE"] == {"positive": "preset:outfit_repair_v1",
+                                   "negative": "preset:outfit_repair_v1"}
+
+
+def test_texto_editado_so_vale_com_o_toggle_ligado():
+    ns = _executa_celula0(**{
+        f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+            'PROMPT_CUSTOM = "chibi, detailed outfit"',
+    })
+    assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["outfit_repair_v1"]["positive"]
+    assert ns["PROMPT_SOURCE"]["positive"] == "preset:outfit_repair_v1"
+
+
+def test_toggle_ligado_aplica_o_texto():
+    ns = _executa_celula0(**{
+        "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+        f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+            'PROMPT_CUSTOM = "chibi, detailed outfit, restore costume"',
+    })
+    assert ns["PROMPT"] == "chibi, detailed outfit, restore costume"
+    assert ns["PROMPT_SOURCE"]["positive"] == "manual_override"
+    assert ns["PROMPT_EDITADO"] is True
+    assert ns["NEGATIVE"] == ns["PROMPT_PRESETS"]["outfit_repair_v1"]["negative"]
+
+
+def test_toggle_ligado_sem_editar_nao_conta_como_override():
+    ns = _executa_celula0(**{
+        "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+        "USAR_NEGATIVE_CUSTOM = False": "USAR_NEGATIVE_CUSTOM = True",
+    })
+    assert ns["PROMPT_SOURCE"] == {"positive": "preset:outfit_repair_v1",
+                                   "negative": "preset:outfit_repair_v1"}
+    assert ns["PROMPT_EDITADO"] is False
+
+
+def test_toggle_ligado_com_campo_vazio_e_erro():
+    with pytest.raises(AssertionError, match="USAR_PROMPT_CUSTOM"):
+        _executa_celula0(**{
+            "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+            f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+                'PROMPT_CUSTOM = "   "',
+        })
+
+
+def test_recipe_registra_prompt_editado():
+    cfg = _executa_celula0()["CONFIG"]
+    assert cfg["prompt_manually_edited"] is False
+    assert cfg["prompt_source"]["positive"] == "preset:outfit_repair_v1"
+
+
+def test_painel_imprime_a_origem_de_cada_prompt():
+    codigo = _codigo("#@title 0.")
+    assert 'PROMPT_SOURCE["positive"]' in codigo
+    assert 'PROMPT_SOURCE["negative"]' in codigo
+
+
+def test_prompt_com_termo_de_personagem_e_validado_na_celula_5():
+    codigo = _codigo("#@title 5.")
+    assert "termos_especificos_no_prompt" in codigo
+    # so o positivo e validado: no negativo "horns" e legitimo
+    assert "mr.termos_especificos_no_prompt(PROMPT)" in codigo
+    assert "mr.termos_especificos_no_prompt(NEGATIVE)" not in codigo
