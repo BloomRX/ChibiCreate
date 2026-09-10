@@ -77,6 +77,7 @@ Intencional, registrado no recipe como `reference_roles`.
 | entradas | `CHARACTER_ID`, `SOURCE_IMAGE`, `REFERENCE_FACE`, `REFERENCE_OUTFIT` | `waifu_001`, `full_body.png`, `face.png`, `outfit.png` |
 | modo | `REFERENCE_MODE` | `BOTH` |
 | prompt | `PROMPT_PRESET` | `chibi_v1` |
+| prompt | `PROMPT_OVERRIDE` · `NEGATIVE_OVERRIDE` | vazio (usa o preset) |
 | denoise | `DENOISE` · `USAR_SWEEP_DE_DENOISE` · `DENOISE_SWEEP` | `0.90` · `False` · `0.50…0.90` |
 | sampling | `STEPS` · `CFG` · `SAMPLER` · `SCHEDULER` · `SEED` | `28` · `5.5` · `euler_ancestral` · `normal` · `42` |
 | IP-Adapter | `IPADAPTER_WEIGHT` · `WEIGHT_TYPE` · `START_AT` · `END_AT` · `EMBEDS_SCALING` | `0.75` · `linear` · `0.0` · `1.0` · `V only` |
@@ -84,6 +85,32 @@ Intencional, registrado no recipe como `reference_roles`.
 | rótulo | `EXPERIMENT_LABEL` | automático |
 
 `REFERENCE_MODE = "BOTH"` executa 1 REF e 3 REFS para a mesma configuração.
+
+### Ajuste manual do prompt
+
+`PROMPT_OVERRIDE` e `NEGATIVE_OVERRIDE` vazios usam o preset. Preenchidos,
+substituem-no. Os dois lados são independentes: dá para ajustar só o
+negativo mantendo o positivo do preset.
+
+O recipe grava `prompt_source` (`preset:chibi_v1` ou `manual_override`) por
+lado e `prompt_manually_edited`. Sem isso, um experimento com prompt
+editado ficaria indistinguível de um que usou o preset — e a comparação
+entre experimentos perderia o sentido.
+
+**O positivo continua tendo de ser genérico.** A célula 8 bloqueia termos
+de personagem (cor de cabelo, chifres, capa, nome) antes de gastar GPU:
+
+```
+BLOCKED — prompt positivo contem termos especificos de personagem:
+['cape', 'horns', 'silver hair']
+```
+
+Isso não é preciosismo: se a identidade vier do texto, a recipe deixa de
+servir para as outras 100+ personagens e o lab perde o que está medindo —
+quanta identidade a *imagem* consegue carregar.
+
+O **negativo não é validado**: ali `horns` significa "evite chifres", que é
+um uso legítimo.
 
 O sweep de denoise existe mas vem **desligado**: ligado, multiplica as
 execuções (5 valores × 2 modos = 10 gerações).

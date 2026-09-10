@@ -253,6 +253,7 @@ def _valida(object_info=None, **overrides):
     src = _codigo("#@title 8.").replace(
         'f"/content/ChibiCreate/workflows/{WORKFLOW}/"',
         f'f"{WF_DIR.parent.parent}/{{WORKFLOW}}/"')
+    ns["mr"] = mr  # no Colab vem da celula 4
     import contextlib
     import io
     with contextlib.redirect_stdout(io.StringIO()):
@@ -513,3 +514,78 @@ def test_guidance_scale_nao_se_chama_CFG():
             f"uso escalar de CFG na celula 9: {ln.strip()!r}. "
             "CFG e o dict vindo de mr.get_model()."
         )
+
+
+# ---------------------------------------------------------------------------
+# Ajuste manual de prompt / negative na celula 0
+# ---------------------------------------------------------------------------
+
+def test_prompt_sem_override_vem_do_preset():
+    ns = _executa_celula0()
+    assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
+    assert ns["NEGATIVE"] == ns["PROMPT_PRESETS"]["chibi_v1"]["negative"]
+    assert ns["PROMPT_EDITADO"] is False
+    assert ns["PROMPT_SOURCE"] == {"positive": "preset:chibi_v1",
+                                   "negative": "preset:chibi_v1"}
+
+
+def test_override_substitui_o_preset():
+    ns = _executa_celula0(**{
+        'PROMPT_OVERRIDE = ""':
+            'PROMPT_OVERRIDE = "chibi, super deformed, pastel palette"',
+        'NEGATIVE_OVERRIDE = ""':
+            'NEGATIVE_OVERRIDE = "blurry, jpeg artifacts"',
+    })
+    assert ns["PROMPT"] == "chibi, super deformed, pastel palette"
+    assert ns["NEGATIVE"] == "blurry, jpeg artifacts"
+    assert ns["PROMPT_EDITADO"] is True
+    assert ns["PROMPT_SOURCE"]["positive"] == "manual_override"
+    assert ns["PROMPT_SOURCE"]["negative"] == "manual_override"
+    assert ns["CONFIG"]["prompt"] == "chibi, super deformed, pastel palette"
+
+
+def test_os_dois_lados_sao_independentes():
+    """Da para ajustar so o negativo mantendo o positivo do preset."""
+    ns = _executa_celula0(**{
+        'NEGATIVE_OVERRIDE = ""': 'NEGATIVE_OVERRIDE = "blurry, extra fingers"',
+    })
+    assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
+    assert ns["NEGATIVE"] == "blurry, extra fingers"
+    assert ns["PROMPT_SOURCE"]["positive"] == "preset:chibi_v1"
+    assert ns["PROMPT_SOURCE"]["negative"] == "manual_override"
+
+
+def test_override_so_de_espacos_cai_no_preset():
+    ns = _executa_celula0(**{'PROMPT_OVERRIDE = ""': 'PROMPT_OVERRIDE = "   "'})
+    assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
+    assert ns["PROMPT_EDITADO"] is False
+
+
+def test_recipe_registra_que_o_prompt_foi_editado():
+    """Sem isso, um experimento editado fica indistinguivel de um preset."""
+    codigo = _codigo("#@title 9.")
+    assert '"prompt_source": PROMPT_SOURCE' in codigo
+    assert '"prompt_manually_edited": PROMPT_EDITADO' in codigo
+
+
+def test_override_com_termo_de_personagem_e_bloqueado():
+    """O prompt-base tem de servir para 100+ personagens."""
+    with pytest.raises(SystemExit) as e:
+        _valida(**{'PROMPT_OVERRIDE = ""':
+                   'PROMPT_OVERRIDE = "1girl, chibi, silver hair, red horns"'})
+    assert "BLOCKED" in str(e.value)
+    assert "termos especificos" in str(e.value)
+
+
+def test_negativo_pode_citar_tracos_de_personagem():
+    """No negativo, 'horns' diz o que EVITAR — e legitimo."""
+    ns = _valida(**{'NEGATIVE_OVERRIDE = ""':
+                    'NEGATIVE_OVERRIDE = "bad quality, horns, extra limbs"'})
+    assert ns["NEGATIVE"] == "bad quality, horns, extra limbs"
+
+
+def test_override_generico_passa_na_validacao():
+    ns = _valida(**{'PROMPT_OVERRIDE = ""':
+                    'PROMPT_OVERRIDE = "1girl, solo, chibi, super deformed, '
+                    'large head, simple cel shading, best quality"'})
+    assert "super deformed" in ns["PROMPT"]
