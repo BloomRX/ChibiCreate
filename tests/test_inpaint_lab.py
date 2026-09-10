@@ -617,3 +617,29 @@ def test_celula_1_nao_morre_sem_nvidia_smi():
     codigo = _codigo("#@title 1")
     assert "FileNotFoundError" in codigo
     assert "GPU NAO DETECTADA" in codigo
+
+
+def test_celula_3_respeita_o_mask_channel_do_painel():
+    """PNG de camada transparente tem RGB branco em toda a tela: ler com
+    convert('L') devolve mascara cheia e bloqueia por area de ~100%."""
+    codigo = _codigo("#@title 3")
+    assert '_extrair_canal' in codigo
+    assert 'MASK_CHANNEL' in codigo
+    assert 'getchannel("A")' in codigo
+    assert 'Image.open(MSK).convert("L")' not in codigo
+
+
+def test_celula_3_tem_mask_invert():
+    assert 'MASK_INVERT' in _codigo("#@title 3")
+    assert 'MASK_INVERT' in _celula("#@title 0")
+
+
+def test_celula_3_diagnostica_canais_quando_a_area_e_absurda():
+    """A mensagem tem de dizer QUAL canal usar, nao so que a area e grande."""
+    codigo = _codigo("#@title 3")
+    assert "_perfil" in codigo
+    assert codigo.count("_perfil(_msk_raw)") >= 2, "diagnostico nos dois limites"
+
+
+def test_celula_3_bloqueia_alpha_inexistente():
+    assert "nao tem canal" in _codigo("#@title 3")
