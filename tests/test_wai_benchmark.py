@@ -1098,3 +1098,26 @@ def test_falha_do_ipadapter_mostra_diagnostico_em_vez_de_so_bloquear():
     assert "ModuleNotFoundError" in cel7
     assert "IPA_DIR.exists()" in cel7
     assert "models/ipadapter" in cel7 or "ipa_models" in cel7
+
+
+# ----------------------------------------------------------------------
+# Ambiente de execucao do Colab
+# ----------------------------------------------------------------------
+
+def test_notebook_pede_gpu_t4_por_padrao():
+    """Sem isto o Colab reabre em CPU e o usuario troca na mao toda vez.
+
+    O Colab le estas chaves da metadata ao abrir o .ipynb. Mesma
+    convencao ja usada pelo notebook do FLUX.
+    """
+    md = json.loads(NB.read_text())["metadata"]
+    assert md.get("accelerator") == "GPU"
+    assert md.get("colab", {}).get("gpuType") == "T4"
+
+
+def test_preflight_explica_como_trocar_para_gpu():
+    """Bloquear sem dizer onde clicar so transfere o problema."""
+    src = _celula_de_codigo("#@title 2.")
+    assert "BLOCKED — a sessao esta em CPU" in src
+    assert "Alterar o tipo de ambiente de execucao" in src
+    assert "Nao ha fallback para CPU" in src

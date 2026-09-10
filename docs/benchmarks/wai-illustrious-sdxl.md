@@ -401,7 +401,9 @@ determinismo absoluto.
 ## Como rodar no Colab
 
 1. Abrir `notebooks/wai_illustrious_sdxl_eval.ipynb` no Colab.
-2. `Runtime → Change runtime type → T4 GPU`.
+2. O notebook **já pede T4 por padrão** (`accelerator: GPU`, `gpuType: T4`
+   na metadata). Só troque na mão se a sessão abrir em CPU — a célula 2
+   detecta e explica onde clicar.
 3. **Célula 0** — escolher `CHARACTER_ID` e a **run** (001, 002 ou 003).
 4. **Célula 2** — preflight. Se `BLOCKED`, **pare**: sem fallback silencioso.
 5. **Célula 4** — montar o Drive e validar o checkpoint. Autorize o acesso
