@@ -142,14 +142,24 @@ O prompt-base **não descreve a personagem**. Separação de responsabilidades:
 Prompt-base:
 
 > 1girl, solo, full body, chibi, super deformed, large head, small body,
-> short limbs, cute stylized anime character, clean lineart, simple cel
-> shading, anime coloring, standing, simple background, masterpiece, best
-> quality, amazing quality
+> short limbs, cute stylized anime character, simple cel shading, anime
+> coloring, standing, simple background, masterpiece, best quality,
+> amazing quality
 
 Negativo:
 
 > bad quality, worst quality, worst detail, sketch, watermark, signature,
-> logo, text, multiple views, realistic, photorealistic, 3d, semi-realistic
+> logo, text, multiple views, grid, multiple characters, realistic,
+> photorealistic, 3d, semi-realistic, long limbs, tall body, explicit
+
+O negativo agrupa: qualidade (tags do autor), artefatos de splash art
+(`watermark`…`text`), múltiplas figuras (`multiple views`, `grid`,
+`multiple characters` — par de `solo`), fotorrealismo, e **reforço negativo
+da proporção chibi** (`long limbs`, `tall body` — par de `short limbs,
+small body`). Esse último grupo importa porque o img2img parte de uma
+personagem de proporção adulta e tende a conservá-la.
+
+`clean lineart` saiu do positivo por decisão do usuário.
 
 **Correção aplicada.** O prompt anterior listava `black hair, red eyes,
 horns, long black cape, golden ornaments` — atributos concretos da

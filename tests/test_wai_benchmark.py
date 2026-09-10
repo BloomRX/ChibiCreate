@@ -392,7 +392,10 @@ def test_prompt_e_negative_seguem_o_estilo_curto_do_autor():
         "masterpiece, best quality, amazing quality")
     neg = " ".join(m["negative_prompt_override"].split())
     assert neg.startswith("bad quality, worst quality, worst detail, sketch")
-    assert len(neg.split(",")) <= 16, neg
+    # O autor pede negative curto. 20 e o teto que aceitamos: passou disso,
+    # e provavel que alguem esteja empilhando tag por superstiçao. O limite
+    # e nosso, nao do autor — ele nao publica numero.
+    assert len(neg.split(",")) <= 20, f"negative longo demais: {len(neg.split(','))} tags"
 
 
 

@@ -567,9 +567,9 @@ models:
     character_specific_prompt: false
     prompt_override: >-
       1girl, solo, full body, chibi, super deformed, large head, small body,
-      short limbs, cute stylized anime character, clean lineart, simple cel
-      shading, anime coloring, standing, simple background, masterpiece,
-      best quality, amazing quality
+      short limbs, cute stylized anime character, simple cel shading, anime
+      coloring, standing, simple background, masterpiece, best quality,
+      amazing quality
     prompt_override_reason: >
       CORRECAO: o prompt anterior descrevia a waifu_001 em texto ("black
       hair, red eyes, horns, long black cape, golden ornaments"). Isso o
@@ -590,15 +590,27 @@ models:
       nao embelezamento nosso.
     negative_prompt_override: >-
       bad quality, worst quality, worst detail, sketch, watermark,
-      signature, logo, text, multiple views, realistic, photorealistic, 3d,
-      semi-realistic
+      signature, logo, text, multiple views, grid, multiple characters,
+      realistic, photorealistic, 3d, semi-realistic, long limbs, tall body,
+      explicit
     negative_prompt_reason: >
-      Tags de qualidade do autor, mais supressao de
-      watermark/assinatura/texto e de "multiple views" (character sheet),
-      modos de falha comuns quando a imagem de partida e uma splash art.
-      Os termos realistic/photorealistic/3d/semi-realistic afastam a saida
-      do fotorrealismo e reforcam o alvo 2D anime. Todos genericos: nenhum
-      descreve uma personagem especifica.
+      Tags de qualidade do autor, mais quatro grupos genericos:
+      (1) watermark/signature/logo/text — modos de falha comuns quando a
+          imagem de partida e uma splash art;
+      (2) multiple views/grid/multiple characters — evita character sheet e
+          mais de uma figura no quadro, coerente com "solo" no positivo;
+      (3) realistic/photorealistic/3d/semi-realistic — afasta do
+          fotorrealismo e reforca o alvo 2D anime;
+      (4) long limbs/tall body — reforco NEGATIVO da proporcao chibi, par
+          direto de "short limbs, small body" no positivo. Util porque o
+          img2img parte de uma personagem de proporcao adulta e tende a
+          conserva-la.
+      Nenhum termo descreve uma personagem especifica: todos continuam
+      genericos e reutilizaveis.
+      "explicit" e uma tag de rating do dominio Danbooru, usada aqui para
+      empurrar a saida para conteudo nao explicito. Nao e modificacao de
+      filtro do modelo: e condicionamento normal por prompt negativo.
+
     prompt_generic_note: >
       Termos proibidos neste prompt-base: cor de cabelo, cor de olhos,
       chifres, roupa, capa, acessorios, nome de personagem, cores
