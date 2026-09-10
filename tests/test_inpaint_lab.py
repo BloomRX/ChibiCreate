@@ -586,3 +586,34 @@ def test_sha256_e_calculado_apos_o_download():
 def test_nao_troca_por_outro_checkpoint_quando_falta():
     codigo = _codigo("#@title 4.")
     assert "NAO substitua por WAI v17" in codigo
+
+
+def test_celula_1_clona_a_branch_de_trabalho_e_nao_a_main():
+    """A `main` do remoto so tem README: clonar sem --branch deixa o
+    notebook sem `scripts/chibi` e a celula 3 morre com ModuleNotFoundError."""
+    codigo = _codigo("#@title 1")
+    assert "REPO_BRANCH" in codigo
+    assert "arena/01a07ece-chibicreate" in codigo
+    assert "--branch" in codigo, "clone precisa fixar a branch"
+
+
+def test_celula_1_falha_cedo_e_com_contexto_se_scripts_faltar():
+    codigo = _codigo("#@title 1")
+    assert "BLOCKED" in codigo
+    assert "inpaint_check.py" in codigo
+    assert "import chibi.inpaint_check" in codigo
+
+
+def test_nenhuma_celula_hardcoda_o_caminho_de_scripts():
+    nb = json.loads(NB.read_text())
+    for celula in nb["cells"]:
+        fonte = "".join(celula["source"])
+        assert '"/content/ChibiCreate/scripts"' not in fonte, (
+            "usar str(SCRIPTS), definido pela celula 1")
+
+
+def test_celula_1_nao_morre_sem_nvidia_smi():
+    """Runtime sem GPU nao pode derrubar a preparacao do ambiente."""
+    codigo = _codigo("#@title 1")
+    assert "FileNotFoundError" in codigo
+    assert "GPU NAO DETECTADA" in codigo
