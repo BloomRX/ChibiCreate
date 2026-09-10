@@ -1,0 +1,114 @@
+# Landmarks para correspondencia REAL <-> CHIBI — waifu_001.
+#
+# ARQUIVO OPCIONAL. Sem ele, so valem os landmarks derivados do contorno
+# (`character_correspondence.derive_landmarks`), e a correspondencia parcial
+# funciona normalmente — com menos pares e confianca menor.
+#
+# POR QUE ELE EXISTE
+# A deteccao por contorno so consegue sustentar 4 pontos nesta arte:
+# top_of_head, silhouette_bottom e a linha de maior largura (shoulder_*).
+# Pescoco, cintura e quadril NAO aparecem no perfil de silhueta porque o
+# cabelo longo funde cabeca e ombros e a capa cobre o contorno lateral do
+# tronco. Tornozelos tambem nao: a barra do manto se divide em blocos ao
+# redor dos pes e imita um par de pernas.
+#
+# Preferir SEMPRE coordenadas normalizadas (`nx`, `ny`), em fracao da caixa
+# do sujeito: elas sobrevivem a mudanca de resolucao e de enquadramento.
+# Coordenadas absolutas (`x`, `y`) tambem sao aceitas.
+#
+# `source` = full_body.png (personagem REAL)
+# `target` = run_003/output.png (personagem CHIBI)
+#
+# [HUMAN REVIEW REQUIRED] Os valores de `source` abaixo foram lidos da arte
+# real e conferidos visualmente. Os de `target` NAO existem: `run_003/
+# output.png` nao esta versionado (experiments/**/*.png e gitignored), entao
+# nao ha como medi-los aqui. Preencha-os na etapa CORRESPONDENCE REVIEW do
+# notebook, ou deixe em branco para usar apenas os derivados do contorno.
+
+id: waifu_001
+
+# ---------------------------------------------------------------------------
+# PERSONAGEM REAL — characters/waifu_001/reference/full_body.png
+# ---------------------------------------------------------------------------
+# Conferidos sobre a arte (1024x1024, caixa do sujeito x[228,796] y[103,973]).
+source:
+  # base do queixo, onde o rosto encontra o pescoco
+  chin:
+    nx: 0.503
+    ny: 0.168
+    confidence: 0.8
+  # pescoco: entre o queixo e a gola
+  neck:
+    nx: 0.503
+    ny: 0.196
+    confidence: 0.8
+  # articulacao do ombro (nao a extremidade da manga)
+  shoulder_left:
+    nx: 0.395
+    ny: 0.235
+    confidence: 0.75
+  shoulder_right:
+    nx: 0.612
+    ny: 0.235
+    confidence: 0.75
+  # cintura anatomica, na altura do umbigo
+  waist:
+    nx: 0.505
+    ny: 0.400
+    confidence: 0.7
+  hip_left:
+    nx: 0.430
+    ny: 0.470
+    confidence: 0.7
+  hip_right:
+    nx: 0.580
+    ny: 0.470
+    confidence: 0.7
+  # punhos: as maos aparecem abaixo das mangas sino
+  wrist_left:
+    nx: 0.352
+    ny: 0.520
+    confidence: 0.6
+  wrist_right:
+    nx: 0.655
+    ny: 0.520
+    confidence: 0.6
+  knee_left:
+    nx: 0.455
+    ny: 0.700
+    confidence: 0.6
+  knee_right:
+    nx: 0.545
+    ny: 0.700
+    confidence: 0.6
+  ankle_left:
+    nx: 0.470
+    ny: 0.905
+    confidence: 0.6
+  ankle_right:
+    nx: 0.530
+    ny: 0.905
+    confidence: 0.6
+
+# ---------------------------------------------------------------------------
+# PERSONAGEM CHIBI — run_003/output.png
+# ---------------------------------------------------------------------------
+# [HUMAN REVIEW REQUIRED] Vazio de proposito. A Run 003 nao esta no
+# repositorio, entao qualquer valor aqui seria invencao. Preencha apos ver a
+# imagem — a proporcao chibi muda TUDO: a cabeca costuma ocupar de 1/3 a 1/2
+# da altura, e o pescoco praticamente desaparece.
+#
+# Exemplo do formato (NAO sao medidas reais):
+#   chin:      {nx: 0.50, ny: 0.38, confidence: 0.8}
+#   neck:      {nx: 0.50, ny: 0.42, confidence: 0.8}
+#   shoulder_left:  {nx: 0.36, ny: 0.47, confidence: 0.7}
+#   shoulder_right: {nx: 0.64, ny: 0.47, confidence: 0.7}
+#   waist:     {nx: 0.50, ny: 0.62, confidence: 0.7}
+target: {}
+
+notes: >-
+  Correspondencia parcial e o modo esperado aqui, nao uma falha. Apenas os
+  landmarks presentes NAS DUAS imagens formam pares; os demais sao ignorados
+  e ficam listados em diagnostics.landmarks_source_only. Os valores de
+  `source` sao calibracao desta personagem e nao devem ser reaproveitados
+  para outra arte.
