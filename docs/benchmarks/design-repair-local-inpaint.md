@@ -46,15 +46,32 @@ contato antes de liberar os arquivos:
 
 > *You need to agree to share your contact information to access this model.*
 
-A listagem é pública (é assim que sabemos que o arquivo é
-`Waifu-Inpaint-XL.safetensors`, 6.94 GB), mas o download precisa de login e
-aceite. **É um ato pessoal, feito na sua conta** — não dá para automatizar,
-e contornar o gate está fora de questão.
+**O aceite é pessoal e continua sendo seu** — o agente não pode aceitar
+termos em seu nome. Mas **o download em si é automático** depois disso,
+usando um token seu:
 
-Passos: aceitar em `https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL`,
-baixar o `.safetensors` e colocar em
-`My Drive/ComfyUI_Data/models/checkpoints/`. O SHA-256 é calculado e
-registrado na célula 1.
+1. aceite as condições em
+   `https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL` (logado);
+2. crie um token de leitura em `huggingface.co/settings/tokens`;
+3. no Colab: painel lateral → chave 🔑 (Secrets) → `+ Adicionar novo
+   secret`, nome **HF_TOKEN**, com acesso ao notebook.
+
+A célula 4 lê o token de Secrets (ou de `HF_TOKEN` no ambiente, ou via
+`pedir_token()`), baixa direto para o Drive e calcula o SHA-256. **O token
+nunca é escrito no notebook** — não há campo de formulário para ele.
+
+Proteções do download, todas testadas contra um servidor local:
+
+| situação | comportamento |
+|---|---|
+| token ausente | bloqueia com os passos do aceite |
+| HTTP 401/403 | bloqueia dizendo que faltam **aceitar as condições** |
+| menos de 8 GB livres | bloqueia antes de começar |
+| download truncado | descarta o `.part`, não cria o arquivo final |
+| HTML de erro salvo como `.safetensors` | bloqueia na checagem de cabeçalho |
+
+Baixa para um `.part` e só renomeia no fim: um checkpoint pela metade
+falharia dentro do ComfyUI com erro obscuro.
 
 ### 2. A máscara não existe
 

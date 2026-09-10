@@ -525,3 +525,64 @@ def test_tamanho_declarado_esta_marcado_como_estimado():
     """6.94 GB vem da listagem publica, nao de um arquivo conferido."""
     w = _lock()["models"]["waifu_inpaint_xl"]["weights"]
     assert w["total_storage_bytes_estimated"] is True
+
+
+# ---------------------------------------------------------------------------
+# Download do checkpoint gated via HF_TOKEN (Colab Secrets)
+# ---------------------------------------------------------------------------
+
+def test_token_nunca_e_escrito_no_notebook():
+    """O token e segredo: so pode vir de Secrets/env/getpass."""
+    codigo = _codigo("#@title 4.")
+    assert "userdata.get(\"HF_TOKEN\")" in codigo
+    assert 'os.environ.get("HF_TOKEN"' in codigo
+    assert "getpass" in codigo
+    # nenhum #@param de string para o token
+    for ln in _celula("#@title 4.").split("\n"):
+        if "#@param" in ln:
+            assert "TOKEN" not in ln.upper(), f"token exposto no form: {ln}"
+    assert "hf_" not in codigo.replace("hf_token", "").replace("_hf_token", "")
+
+
+def test_download_usa_o_endpoint_resolve_e_bearer():
+    codigo = _codigo("#@title 4.")
+    assert "/resolve/main/" in codigo
+    assert 'f"Bearer {token}"' in codigo
+
+
+def test_erro_403_explica_que_falta_aceitar_as_condicoes():
+    """Token valido + condicoes nao aceitas = 403. A mensagem tem de dizer
+    isso, senao o usuario procura no lugar errado."""
+    codigo = _codigo("#@title 4.")
+    assert "e.code in (401, 403)" in codigo
+    assert "CONDICOES ainda nao foram aceitas" in codigo
+
+
+def test_download_parcial_nao_vira_checkpoint():
+    codigo = _codigo("#@title 4.")
+    assert ".part" in codigo
+    assert "download incompleto" in codigo
+    assert "parcial.rename(destino)" in codigo
+
+
+def test_valida_que_o_arquivo_e_safetensors():
+    """Uma pagina de erro salva com nome .safetensors falharia so depois."""
+    codigo = _codigo("#@title 4.")
+    assert "safetensors valido" in codigo
+
+
+def test_checa_espaco_antes_de_baixar():
+    codigo = _codigo("#@title 4.")
+    assert "disk_usage" in codigo
+    assert "< 8e9" in codigo
+
+
+def test_sha256_e_calculado_apos_o_download():
+    codigo = _codigo("#@title 4.")
+    assert "CHECKPOINT_SHA256" in codigo
+    assert "models.lock.yaml" in codigo
+
+
+def test_nao_troca_por_outro_checkpoint_quando_falta():
+    codigo = _codigo("#@title 4.")
+    assert "NAO substitua por WAI v17" in codigo
