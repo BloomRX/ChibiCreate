@@ -91,3 +91,30 @@ def diferenca_visivel(source, output, *, ganho: int = 8) -> Image.Image:
     """Mapa de diferenca amplificado, para inspecao humana."""
     d = np.abs(_rgb(source) - _rgb(output)).max(axis=2)
     return Image.fromarray(np.clip(d * ganho, 0, 255).astype(np.uint8), "L")
+
+
+def overlap_protegido(mask, protected) -> int:
+    """Pixels da mascara que caem em regiao protegida. DEVE ser 0.
+
+    Espelha `mask_engine.mask_protected_overlap_pixels`, mas opera sobre
+    imagens carregadas do disco (a mascara de inpaint e desenhada a mao no
+    espaco da imagem-alvo, nao derivada da arte-fonte).
+    """
+    m = _mascara_bool(mask, np.asarray(
+        (mask if isinstance(mask, Image.Image) else Image.open(mask))
+        .convert("L")).shape)
+    p = _mascara_bool(protected, m.shape)
+    return int(np.count_nonzero(m & p))
+
+
+def overlay(source, mask, *, cor=(255, 0, 0), alpha: float = 0.45) -> Image.Image:
+    """Source com a regiao editavel destacada, para revisao humana."""
+    base = (source if isinstance(source, Image.Image)
+            else Image.open(source)).convert("RGB")
+    m = np.asarray((mask if isinstance(mask, Image.Image)
+                    else Image.open(mask)).convert("L").resize(base.size)) > 127
+    arr = np.asarray(base).astype(float)
+    tint = np.zeros_like(arr)
+    tint[..., 0], tint[..., 1], tint[..., 2] = cor
+    arr[m] = arr[m] * (1 - alpha) + tint[m] * alpha
+    return Image.fromarray(arr.astype(np.uint8), "RGB")

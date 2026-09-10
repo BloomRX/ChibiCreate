@@ -1,17 +1,39 @@
-# WAI INPAINT-XL LAB — correção localizada de figurino
+# DESIGN REPAIR / LOCAL INPAINT
 
-**Hipótese:** em vez de retransformar a personagem inteira, mascarar só a
-roupa e deixar um modelo de inpainting redesenhar apenas ela.
+Linha experimental própria, **separada do benchmark do
+`waiIllustriousSDXL_v170`**, que permanece válido e intocado. Este
+checkpoint não o substitui: são modelos, licenças e finalidades diferentes.
 
-```
-CHIBI JÁ GERADO (WAI v17) → máscara da roupa → Waifu-Inpaint-XL → resto intacto
-```
+`RUN 003 → máscara da roupa → Waifu-Inpaint-XL → roupa corrigida`
 
-A pergunta é objetiva: **conseguimos consertar a roupa sem deformar o resto
-da personagem?**
+A pergunta é objetiva: **o Waifu-Inpaint-XL consegue corrigir a roupa da
+Run 003 com boa integração visual, sem alterar o resto?**
 
-Não substitui o `wai_illustrious_sdxl_v170`, que continua gerando o chibi de
-entrada. O laboratório anterior segue intacto.
+## Entradas
+
+| entrada | origem | papel |
+|---|---|---|
+| `run_003_output.png` | **upload** (não está no Git) | imagem a corrigir |
+| `outfit_mask.png` | upload, pintada à mão | onde **pode** editar |
+| `protected_mask.png` | upload, opcional | overlap exigido = **0** |
+| `full_body.png` | declarada | **não usada** neste teste |
+
+A máscara está no **espaço da Run 003**, não no da arte original: o alvo da
+edição já é a Run 003.
+
+Validado da source: dimensão, SHA-256 do arquivo e SHA-256 dos pixels.
+
+## Regiões protegidas
+
+Rosto, olhos, cabelo, chifres, mãos e o que estiver fora da roupa. Se a
+`protected_mask.png` for enviada, o overlap com a máscara de roupa tem de
+ser **zero** — qualquer pixel invadido bloqueia a execução.
+
+Sem ela, o notebook **avisa** que a verificação automática não é possível e
+a conferência visual passa a ser a única garantia. Não finge que checou.
+
+Antes de qualquer geração o notebook mostra **SOURCE, MASK e OVERLAY** e
+para se a máscara não for válida.
 
 ## Estado: BLOQUEADO em dois pontos
 

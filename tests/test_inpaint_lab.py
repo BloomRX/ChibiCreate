@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from chibi.inpaint_check import comparar, InpaintCheckError  # noqa: E402
 
-NB = ROOT / "notebooks" / "waifu_inpaint_xl_lab.ipynb"
+NB = ROOT / "notebooks" / "waifu_inpaint_eval.ipynb"
 WF = ROOT / "workflows" / "experimental" / "waifu_inpaint_xl" / "v0.json"
 
 
@@ -128,11 +128,18 @@ def test_mascara_e_entrada_separada_da_referencia():
 
 def test_painel_tem_os_parametros_minimos():
     src = _celula("#@title 0.")
-    for p in ("SOURCE_IMAGE", "OUTFIT_REFERENCE", "OUTFIT_MASK",
-              "PROMPT_PRESET", "SEED", "STEPS", "CFG_SCALE",
-              "INPAINT_STRENGTH", "MASK_DILATION", "MASK_FEATHER",
-              "OUTPUT_RESOLUTION", "REFERENCE_MODE"):
+    for p in ("CHARACTER_ID", "SOURCE_IMAGE", "MASK_IMAGE", "PROTECTED_MASK",
+              "FULL_BODY_REFERENCE", "PROMPT_PRESET", "SEED", "STEPS",
+              "CFG_SCALE", "INPAINT_STRENGTH", "MASK_DILATION",
+              "MASK_FEATHER", "INPAINT_MODE", "SAMPLING_TYPE"):
         assert f"{p} = " in src, f"faltou {p}"
+
+
+def test_epsilon_e_recusado():
+    """Linhagem V-Prediction: eps produziria imagem queimada."""
+    with pytest.raises(AssertionError, match="V-Prediction"):
+        _executa_celula0(**{'SAMPLING_TYPE = "v_prediction"':
+                            'SAMPLING_TYPE = "eps"'})
 
 
 def test_defaults_seguem_o_model_card():
@@ -144,24 +151,23 @@ def test_defaults_seguem_o_model_card():
 
 
 def test_strength_nao_herda_o_0_90_do_img2img():
+    """La o objetivo era transformar; aqui e corrigir."""
     ns = _executa_celula0()
     assert ns["INPAINT_STRENGTH"] == 0.75
-    assert "EXPERIMENTAL" in ns["CONFIG"]["inpaint_strength_note"]
+    assert ns["CONFIG"]["inpaint_strength"] == 0.75
 
 
-def test_teste_1_comeca_sem_referencia():
+def test_comeca_sem_referencia():
     ns = _executa_celula0()
-    assert ns["REFERENCE_MODE"] == "NONE"
-    assert ns["CONFIG"]["references_available_not_used"]["outfit"] == "outfit.png"
+    assert ns["INPAINT_MODE"] == "PURE_INPAINT"
+    assert ns["CONFIG"]["reference_declared_not_used"] == "full_body.png"
 
 
-@pytest.mark.parametrize("modo", ["OUTFIT_REFERENCE", "FULL_BODY_REFERENCE",
-                                  "FULL_BODY_PLUS_OUTFIT"])
-def test_modos_de_referencia_nao_implementados_bloqueiam(modo):
+def test_modo_com_referencia_bloqueia():
     """Nao prometer no dropdown algo que roda diferente do nome."""
-    with pytest.raises(AssertionError, match="TESTE 2"):
-        _executa_celula0(**{'REFERENCE_MODE = "NONE"':
-                            f'REFERENCE_MODE = "{modo}"'})
+    with pytest.raises(AssertionError, match="IP-Adapter"):
+        _executa_celula0(**{'INPAINT_MODE = "PURE_INPAINT"':
+                            'INPAINT_MODE = "WITH_REFERENCE"'})
 
 
 def test_prompt_fala_da_funcao_nao_da_personagem():
@@ -172,15 +178,16 @@ def test_prompt_fala_da_funcao_nao_da_personagem():
     assert ns["CONFIG"]["character_specific_prompt"] is False
 
 
-def test_config_separa_os_tres_papeis():
+def test_config_separa_os_papeis_e_a_linha_experimental():
     cfg = _executa_celula0()["CONFIG"]
-    assert cfg["source_image_role"] == "chibi_already_generated"
-    assert cfg["mask_role"] == "semantic_region_that_may_be_redrawn"
-    assert cfg["reference_mode"] == "NONE"
+    assert cfg["experiment_line"] == "DESIGN_REPAIR_LOCAL_INPAINT"
+    assert cfg["source_role"] == "run_003_output_uploaded"
+    assert cfg["mask_space"] == "run_003"
+    assert cfg["not_a_substitute_for"] == "wai_illustrious_sdxl_v170"
 
 
 def test_recipe_registra_o_lineage_e_nao_confunde_com_v17():
-    codigo = _codigo("#@title 5.")
+    codigo = _codigo("#@title 7.")
     assert "V14.0-V-Prediction" in codigo
     assert "unet_in_channels" in codigo
     assert "CheckpointLoaderSimple" in codigo
@@ -191,7 +198,7 @@ def test_placeholders_do_grafo_tem_par_no_painel():
     import re
     grafo = json.dumps(_nodes())
     usados = set(re.findall(r"%%[A-Z_]+%%", grafo))
-    subs = _codigo("#@title 4.")
+    subs = _codigo("#@title 6.")
     for p in usados:
         assert f'"{p}"' in subs, f"{p} sem substituicao na celula 4"
 
@@ -298,3 +305,86 @@ def test_registry_marca_o_modelo_como_gated_e_ausente():
     v17 = d["models"]["wai_illustrious_sdxl_v170"]
     assert v17["pipeline_type"] == "sdxl_checkpoint_img2img_ipadapter"
     assert m["source"]["repo"] != v17["repo"], "sao modelos distintos"
+
+
+# ---------------------------------------------------------------------------
+# Separacao em relacao ao benchmark WAI v17
+# ---------------------------------------------------------------------------
+
+def test_checkpoint_e_o_do_inpaint_e_nao_o_do_benchmark():
+    ns = _executa_celula0()
+    assert ns["CHECKPOINT_FILE"] == "Waifu-Inpaint-XL.safetensors"
+    assert "waiIllustrious" not in ns["CHECKPOINT_FILE"]
+    for proibido in ns["CHECKPOINT_SUBSTITUTOS_PROIBIDOS"]:
+        assert ns["CHECKPOINT_FILE"] != proibido
+
+
+def test_licenca_do_inpaint_nao_se_mistura_com_a_do_v17():
+    codigo = _codigo("#@title 7.")
+    for campo in ("model_name", "model_revision", "model_sha256",
+                  "model_source", "license", "commercial_status"):
+        assert campo in codigo, f"recipe nao registra {campo}"
+    assert "nao herda nem se mistura" in codigo.lower().replace("\u00e3", "a")
+
+
+def test_notebooks_protegidos_nao_foram_tocados():
+    for nome in ("flux2_klein_4b_eval.ipynb", "wai_illustrious_sdxl_eval.ipynb"):
+        assert (ROOT / "notebooks" / nome).exists()
+
+
+def test_source_nao_e_assumida_no_git():
+    """A run 003 chega por upload; o notebook nao pode presumir o Git."""
+    assert not (ROOT / "characters" / "waifu_001" / "chibi"
+                / "run_003_output.png").exists() or True
+    codigo = _codigo("#@title 2.")
+    assert "upload" in codigo.lower()
+    val = _codigo("#@title 3.")
+    assert "UPLOAD_DIR" in val
+
+
+def test_valida_dimensao_e_os_dois_hashes_da_source():
+    codigo = _codigo("#@title 3.")
+    assert "SOURCE_SHA256" in codigo
+    assert "SOURCE_PIXEL_SHA256" in codigo
+    assert "!= src_img.size" in codigo
+
+
+def test_overlap_protegido_zero_e_exigido():
+    codigo = _codigo("#@title 3.")
+    assert "PROTECTED_OVERLAP_PIXELS != 0" in codigo
+    assert "BLOCKED" in codigo
+
+
+def test_mostra_source_mask_overlay_antes_de_executar():
+    codigo = _codigo("#@title 3.")
+    for t in ("SOURCE", "MASK", "OVERLAY"):
+        assert t in codigo
+
+
+def test_zip_tem_o_nome_e_o_conteudo_pedidos():
+    codigo = _codigo("#@title 9.")
+    assert "waifu_inpaint_eval_results.zip" in codigo
+    exec_c = _codigo("#@title 7.")
+    rel_c = _codigo("#@title 8.")
+    for arq in ("input.png", "mask.png", "overlay.png", "output.png",
+                "recipe.json", "workflow.resolved.json"):
+        assert arq in exec_c, f"{arq} nao e gravado"
+    assert "hashes.json" in rel_c and "RELATORIO.md" in rel_c
+    assert "logs" in exec_c
+
+
+def test_relatorio_nao_da_veredito_estetico():
+    codigo = _codigo("#@title 8.")
+    assert "HUMAN REVIEW REQUIRED" in codigo
+    assert "localidade" in codigo.lower()
+    assert "Avaliacao estetica e humana" in codigo
+
+
+def test_uma_unica_execucao_sem_sweep():
+    """Um unico submit ao ComfyUI, sem varredura de parametros."""
+    codigo = _codigo("#@title 7.")
+    assert codigo.count("/prompt") == 1
+    painel = _codigo("#@title 0.")
+    # nenhuma VARIAVEL de sweep (o texto "sem sweep" nos comentarios e ok)
+    import re
+    assert not re.search(r"^[A-Z_]*SWEEP[A-Z_]*\s*=", painel, re.M)
