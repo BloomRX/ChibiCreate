@@ -1,4 +1,11 @@
-"""Testes do BENCHMARK COMPARATIVO WAI-illustrious-SDXL.
+"""Testes do registry e dos workflows do WAI-illustrious-SDXL.
+
+NOTA: o notebook virou o WAI CHIBI EXPERIMENT LAB e seus testes moraram
+para `test_wai_chibi_lab.py`. Este arquivo cobre o que independe do
+notebook: registry, licenca, pinagem do checkpoint, prompt generico e a
+estrutura dos workflows.
+
+Historico original:
 
 Este benchmark existe para responder UMA pergunta: o WAI preserva o design
 da roupa melhor que o FLUX.2 klein 4B? Ele NAO e pipeline oficial.
@@ -130,17 +137,6 @@ def test_caminho_do_drive_e_parametro_sem_nome_inventado():
     assert "Corrija CKPT_DRIVE_PATH no formulario acima" in src
 
 
-def test_valida_que_e_checkpoint_sdxl_antes_da_inferencia():
-    """O 2o text encoder e o que distingue SDXL de SD 1.5/2.x."""
-    src = _nb_source()
-    assert "conditioner.embedders.1." in src   # OpenCLIP bigG => SDXL
-    assert "model.diffusion_model." in src     # UNet => e um checkpoint
-    assert "BLOCKED — nao parece um checkpoint SDXL" in src
-    assert "BLOCKED — checkpoint nao passou na validacao SDXL." in src
-    # Header lido sem carregar os pesos.
-    assert 'struct.unpack("<Q", f.read(8))' in src
-
-
 def test_nao_move_nem_modifica_o_original_do_drive():
     src = _nb_source()
     assert "Arquivo original do Drive NAO foi movido nem modificado." in src
@@ -158,30 +154,6 @@ def test_nao_move_nem_modifica_o_original_do_drive():
     i = src.index("destino.symlink_to(origem)")
     j = src.index("shutil.copy2(origem, destino)")
     assert i < j, "a copia tem de ser o fallback, nao o caminho principal"
-
-
-
-def test_version_id_desconhecido_nao_bloqueia_a_execucao():
-    """SHA256 identifica o arquivo melhor que um id de catalogo."""
-    src = _nb_source()
-    assert '"unknown/pending"' in src
-    assert "Nao bloqueia a execucao" in src
-    # O gate de execucao olha o SHA e a validacao SDXL, nunca o version id.
-    exec_cell = _celula_de_codigo("#@title 9.")
-    assert 'VERSAO.get("sha256")' in exec_cell
-    assert 'VERSAO.get("sdxl_validated")' in exec_cell
-    assert "modelVersionId" not in exec_cell
-    assert "version_id" not in exec_cell
-
-
-def test_recipe_registra_procedencia_do_drive():
-    src = _nb_source()
-    for campo in ('"source": VERSAO["source"]',
-                  '"drive_logical_path": VERSAO["drive_logical_path"]',
-                  '"link_method": VERSAO["link_method"]',
-                  '"sdxl_validation": VERSAO["sdxl_validation"]'):
-        assert campo in src, campo
-    assert 'CAMINHO_LOGICO = f"My Drive/{CKPT_DRIVE_PATH}"' in src
 
 
 def test_nao_guarda_credenciais():
@@ -277,7 +249,6 @@ def test_pesos_baseline_declarados_como_nao_validados():
     assert m["combine_method_status"] == "BASELINE_EXPERIMENTAL"
 
 
-
 def test_geracao_parte_da_imagem_original_nao_de_latente_vazio():
     """O benchmark e PERSONAGEM -> WAI -> CHIBI, entao e img2img.
 
@@ -328,7 +299,6 @@ def test_run_001_e_img2img_so_com_nodes_core():
     ]), classes
 
 
-
 def test_run_001_nao_tem_ipadapter_lora_controlnet_nem_hires():
     """Run 001 isola a imagem original: nada de condicionamento extra."""
     wf = _workflow("v0")
@@ -347,7 +317,6 @@ def test_baseline_usa_o_vae_integrado_do_checkpoint():
     assert not any(v["class_type"] == "VAELoader" for v in n.values())
 
 
-
 def test_full_body_e_consumida_em_todas_as_runs():
     """Nenhuma referencia declarada pode ser descartada em silencio.
 
@@ -364,13 +333,6 @@ def test_full_body_e_consumida_em_todas_as_runs():
         assert carregadas == esperadas, (ver, carregadas)
 
 
-def test_runs_001_002_pulam_a_instalacao_do_ipadapter():
-    src = _nb_source()
-    assert "Run\", RUN_ID, \"= baseline puro: IP-Adapter NAO e usado." in src
-    assert "IPADAPTER_META = None" in src
-
-
-
 def test_parametros_seguem_a_recomendacao_do_autor():
     """steps/CFG/sampler vem do autor do v17.0; denoise e resolucao nao."""
     par = mr.get_model(KEY)["parameters"]
@@ -380,7 +342,6 @@ def test_parametros_seguem_a_recomendacao_do_autor():
     assert par["hires_fix"] is False
     fonte = par["parameters_source"].lower()
     assert "denoise" in fonte and "img2img" in fonte
-
 
 
 def test_prompt_e_negative_seguem_o_estilo_curto_do_autor():
@@ -396,8 +357,6 @@ def test_prompt_e_negative_seguem_o_estilo_curto_do_autor():
     # e provavel que alguem esteja empilhando tag por superstiçao. O limite
     # e nosso, nao do autor — ele nao publica numero.
     assert len(neg.split(",")) <= 20, f"negative longo demais: {len(neg.split(','))} tags"
-
-
 
 
 def test_diferenca_de_prompt_em_relacao_ao_flux_esta_registrada():
@@ -419,65 +378,11 @@ def test_diferenca_de_prompt_em_relacao_ao_flux_esta_registrada():
     assert "reutilizavel" in razao
 
 
-def test_notebook_orienta_o_diagnostico_das_tres_causas():
-    src = _nb_source()
-    assert "IP-Adapter esta INOCENTE" in src
-    assert "causa (A)" in src and "causa (B)" in src and "causa (C)" in src
-    assert "UM fator por vez" in src
-
-
-
-def test_erro_registra_a_etapa_exata():
-    """Falhar sem dizer ONDE obriga a re-executar tudo para descobrir."""
-    exec_cell = _celula_de_codigo("#@title 9.")
-    for etapa in ("submissao_do_grafo", "execucao_do_grafo",
-                  "timeout_execucao"):
-        assert etapa in exec_cell, etapa
-    # o detalhe do erro tem de sobreviver ao fim da sessao
-    assert "erro_wai.txt" in exec_cell
-    assert exec_cell.count("BLOCKED na etapa") >= 3
-
-
-def test_zip_com_nome_exato_e_download():
-    src = _nb_source()
-    assert "wai_illustrious_eval_results.zip" in src
-    assert "from google.colab import files" in src
-    assert "files.download(str(ZIP_PATH))" in src
-    # Caminho impresso mesmo se o download automatico falhar.
-    assert "Baixe pelo painel de arquivos a esquerda:" in src
-
-
 def test_zip_inclui_tudo_que_foi_pedido():
     src = _nb_source()
     for item in ("output.png", "recipe.json", "workflow.resolved.json",
                  "logs", "comparison.png", "RELATORIO.md", "hashes.json"):
         assert item in src, item
-
-
-def test_workflow_resolvido_e_gravado_com_os_valores_reais():
-    """O grafo COM substituicoes e o que de fato rodou."""
-    src = _nb_source()
-    assert '(RUN_DIR / "workflow.resolved.json").write_text(' in src
-    assert "json.dumps(GRAFO, indent=2)" in src
-
-
-def test_cada_run_tem_diretorio_proprio_sem_mistura():
-    src = _nb_source()
-    assert 'f"/content/ChibiCreate/experiments/model_eval/{MODEL_KEY}/run_{RUN_ID}"' in src
-    assert "[no overwrite]" in src
-
-
-def test_notebook_registra_referencias_declaradas_e_consumidas():
-    """Declarada != consumida: no baseline a diferenca e o ponto principal."""
-    src = _nb_source()
-    assert '"references_declared": REFS_DECLARADAS' in src
-    assert '"references_consumed": REFS_CONSUMIDAS' in src
-    assert '"reference_count": len(REFS_CONSUMIDAS)' in src
-
-
-# ----------------------------------------------------------------------
-# Nodes: so Core
-# ----------------------------------------------------------------------
 
 
 def test_v2_usa_apenas_core_mais_ipadapter():
@@ -539,7 +444,6 @@ def test_seed_42_e_batch_1():
     assert p["batch"] == 1
 
 
-
 def test_resolucao_e_herdada_da_imagem_de_partida_sem_deformar():
     """Nao ha resize: redimensionar deformaria a arte original.
 
@@ -554,7 +458,6 @@ def test_resolucao_e_herdada_da_imagem_de_partida_sem_deformar():
         assert "Scale" not in classes and "Resize" not in classes, ver
 
 
-
 def test_denoise_e_menor_que_um_e_marcado_como_experimental():
     """denoise 1.0 destruiria o latente inicial e viraria txt2img."""
     par = mr.get_model(KEY)["parameters"]
@@ -563,8 +466,6 @@ def test_denoise_e_menor_que_um_e_marcado_como_experimental():
     nota = par["denoise_note"].lower()
     assert "nao otimizado" in nota.replace("\u00e3", "a") or "nao" in nota
     assert "txt2img" in nota
-
-
 
 
 def test_prompt_descreve_estetica_e_nao_a_personagem():
@@ -589,13 +490,6 @@ def test_negativo_e_do_autor_do_checkpoint_e_esta_justificado():
     assert m["negative_prompt_reason"].strip()
 
 
-def test_prompt_vem_do_registry_nao_do_notebook():
-    """O prompt e versionado no registry, nao digitado no notebook."""
-    assert 'PROMPT = " ".join(CFG["prompt_override"].split())' in _nb_source()
-    assert 'NEGATIVE = CFG["negative_prompt_override"]' in _nb_source()
-
-
-
 def test_sem_sweep_de_prompt_ou_seed():
     src = _nb_source().lower()
     for termo in ("for seed in", "seed_sweep", "prompt_sweep", "for prompt in"):
@@ -608,13 +502,6 @@ def test_sem_sweep_de_prompt_ou_seed():
 
 def test_character_id_e_parametro_com_default_waifu_001():
     assert 'CHARACTER_ID = "waifu_001"  #@param' in _nb_source()
-
-
-def test_notebook_permite_escolher_a_run():
-    src = _nb_source()
-    assert "RUN = " in src and "#@param" in src
-    for r in ("Run 001", "Run 002", "Run 003"):
-        assert r in src, r
 
 
 def test_referencias_derivam_do_character_id():
@@ -661,61 +548,11 @@ def test_recipe_registra_tudo_que_a_diretiva_pediu():
     assert '"sha256": real' in src
 
 
-def test_runs_001_e_002_usam_o_mesmo_workflow_e_a_mesma_referencia():
-    """A 002 e repeticao EXATA da 001: so a 003 muda de workflow."""
-    m = mr.get_model(KEY)
-    w = m["workflows"]
-    assert w["run_001"] == w["run_002"]
-    assert w["run_001"].endswith("@v0"), "001/002 usam o BASELINE puro"
-    assert w["run_003"].endswith("@v2")
-
-    src = _nb_source()
-    assert 'WORKFLOW_VERSION = "v2" if IS_RUN_003 else "v0"' in src
-
-
-def test_notebook_compara_as_entradas_da_001_e_002():
-    src = _nb_source()
-    assert 'for campo in ("prompt", "negative_prompt", "parameters",' in src
-    assert "checkpoint diferente" in src
-
-
-def test_nao_sobrescreve_run_anterior():
-    src = _nb_source()
-    assert "[no overwrite]" in src
-
-
-def test_nao_promete_determinismo():
-    src = _nb_source().lower()
-    assert "nao prometemos" in src or "sem determinismo" in src
-
-
-def test_entradas_sao_lidas_nao_modificadas():
-    src = _nb_source()
-    assert "NAO sao modificados" in src
-    celula3 = src.split("#@title 3.")[1].split("#@title 4.")[0]
-    assert ".write_bytes(" not in celula3
-    # A copia para o input do ComfyUI le a origem e escreve so no destino.
-    assert "(COMFY_INPUT / nome).write_bytes(origem_ref.read_bytes())" in src
-
-
 def test_nao_ha_ranking_automatico():
     src = _nb_source()
     assert "[HUMAN REVIEW REQUIRED]" in src
     assert "sem ranking automatico" in src.lower()
     assert "DESIGN_PRESERVATION" in src
-
-
-def test_avalia_limpeza_tecnica_antes_do_julgamento_artistico():
-    src = _nb_source()
-    assert "PRIMEIRO: a imagem esta tecnicamente limpa?" in src
-    assert "sem artefato cromatico" in src
-
-
-def test_montagem_comparativa_tem_os_cinco_paineis():
-    src = _nb_source()
-    for rotulo in ("ORIGINAL", "FLUX RUN 003", "WAI RUN 001",
-                   "WAI RUN 002", "WAI RUN 003"):
-        assert rotulo in src, rotulo
 
 
 def test_nao_reexecuta_o_flux_dentro_deste_notebook():
@@ -777,11 +614,6 @@ def test_conteudo_adulto_declarado_para_revisao_humana():
 # ----------------------------------------------------------------------
 # Isolamento: o benchmark nao contamina nada
 # ----------------------------------------------------------------------
-
-def test_benchmark_se_declara_nao_oficial():
-    src = _nb_source()
-    assert '"is_official_pipeline": False' in src
-    assert "NAO E PIPELINE OFICIAL" in src
 
 
 def test_nao_toca_no_baseline_flux():
@@ -990,21 +822,6 @@ def test_nenhuma_celula_usa_nome_que_ninguem_definiu_antes():
     assert not problemas, "\n".join(problemas)
 
 
-def test_celula_de_referencias_usa_full_body_como_imagem_de_partida():
-    """A celula 3 nao pode tratar full_body como opcional."""
-    src = _celula_de_codigo("#@title 3.")
-    assert "REFS_CONSUMIDAS" in src
-    assert "REFS_DESTA_RUN" not in src, "nome antigo, removido"
-    assert "SRC_W, SRC_H" in src
-    assert "imagem inicial do img2img" in src
-    # papel duplo aparece so na 003
-    assert "ipadapter_reference" in src
-
-
-# ----------------------------------------------------------------------
-# Relatorio e ZIP
-# ----------------------------------------------------------------------
-
 def test_relatorio_nao_afirma_mais_que_as_runs_sao_txt2img():
     """Regressao: o RELATORIO.md entregue dizia 'txt2img puro'.
 
@@ -1022,49 +839,6 @@ def test_relatorio_nao_afirma_mais_que_as_runs_sao_txt2img():
         assert "medem o checkpoint" not in antes, titulo
         assert "sao txt2img" not in antes, titulo
 
-
-def test_relatorio_tem_secao_de_erro_corrigido():
-    """A correcao precisa ficar no artefato, nao so no chat."""
-    src = _celula_de_codigo("#@title 13.")
-    assert "## ERRO CORRIGIDO" in src
-    assert "IP-Adapter NAO e necessario para img2img" in src
-    assert "`VAEEncode` ja faz a imagem entrar no latente" in src
-    assert "e img2img mesmo sem IP-Adapter" in src
-
-
-def test_relatorio_registra_determinismo_com_escopo():
-    """Dizer 'identico' sem dizer onde vale seria promessa vazia."""
-    src = _celula_de_codigo("#@title 13.")
-    assert "byte (artifact_sha256)" in src
-    assert "pixel (output_pixel_sha256)" in src
-    assert "escopo da afirmacao" in src
-    diag = _celula_de_codigo("#@title 11.")
-    assert "DETERMINISMO" in diag
-    assert "IDENTICO_PIXEL" in diag
-    # o escopo da afirmacao aparece impresso, quebrado em varias linhas
-    assert "outra GPU" in diag and "Nao prometemos determinismo" in diag
-
-
-def test_zip_avisa_quando_faltam_runs():
-    """O ZIP anterior saiu so com run_001 e nada avisou."""
-    src = _celula_de_codigo("#@title 13.")
-    assert '{"run_001", "run_002", "run_003"}' in src
-    assert "ZIP INCOMPLETO" in src
-    assert "PACOTE PARCIAL" in src
-
-
-def test_relatorio_documenta_ipadapter_da_run_003():
-    src = _celula_de_codigo("#@title 13.")
-    for campo in ("combine_method", "weights_status", "reference_mechanism",
-                  "reference_roles", "dual_role_note"):
-        assert campo in src, campo
-    # custom nodes vem de todas as runs, nao so da primeira
-    assert "for rec in recipes.values()" in src
-
-
-# ----------------------------------------------------------------------
-# Ciclo de vida do servidor ComfyUI
-# ----------------------------------------------------------------------
 
 def test_pkill_casa_com_a_linha_de_comando_realmente_usada():
     """Regressao real: a Run 003 achou que o IP-Adapter nao existia.
@@ -1210,27 +984,6 @@ def test_validador_nao_bloqueia_vocabulario_legitimo_de_estilo():
         "masterpiece, best quality, amazing quality",
     ):
         assert mr.termos_especificos_no_prompt(legitimo) == [], legitimo
-
-
-def test_notebook_valida_o_prompt_antes_de_executar():
-    """Registry limpo hoje nao impede alguem de sujar amanha."""
-    val = _celula_de_codigo("#@title 8.")
-    assert "termos_especificos_no_prompt" in val
-    assert "prompt-base generico" in val
-    assert "character_specific_prompt" in val
-
-
-def test_recipe_registra_que_o_prompt_e_generico():
-    rec = _celula_de_codigo("#@title 10.")
-    assert '"prompt_type": CFG["prompt_type"]' in rec
-    assert '"character_specific_prompt": CFG["character_specific_prompt"]' in rec
-
-
-def test_relatorio_nao_diz_que_o_prompt_preserva_atributos_da_personagem():
-    rel = _celula_de_codigo("#@title 13.")
-    assert "O prompt e generico" in rel
-    assert "nao descreve a personagem" in rel.replace("**", "")
-    assert "prompt_type" in rel
 
 
 def test_nenhum_termo_da_waifu_001_sobrou_no_notebook_do_wai():

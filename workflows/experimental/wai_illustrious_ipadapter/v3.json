@@ -1,9 +1,9 @@
 {
-  "_comment": "WAI CHIBI EXPERIMENT LAB. IMG2IMG REAL: o latente inicial vem SEMPRE de full_body.png via LoadImage -> VAEEncode -> KSampler. NUNCA usar EmptyLatentImage aqui: isso viraria txt2img e descartaria a personagem original. O mecanismo de referencia atua ADICIONALMENTE sobre o MODEL, nao sobre o latente. Resolucao herdada da imagem-fonte (sem resize: redimensionar deformaria a arte). VAE integrado ao checkpoint (saida 2). || v2 = MODO 3 REFS. full_body.png tem DOIS PAPEIS: imagem inicial do img2img E referencia do IP-Adapter (dual_role). Encoder x3 + CombineEmbeds (em vez de IPAdapterAdvanced em serie) para que o peso de CADA referencia seja explicito e auditavel. Sao precisos DOIS CombineEmbeds: um para os embeds positivos (saida 0 de cada encoder) e outro para os negativos (saida 1).",
+  "_comment": "WAI CHIBI EXPERIMENT LAB. IMG2IMG REAL: o latente inicial vem SEMPRE de full_body.png via LoadImage -> VAEEncode -> KSampler. NUNCA usar EmptyLatentImage aqui: isso viraria txt2img e descartaria a personagem original. O mecanismo de referencia atua ADICIONALMENTE sobre o MODEL, nao sobre o latente. Resolucao herdada da imagem-fonte (sem resize: redimensionar deformaria a arte). VAE integrado ao checkpoint (saida 2). || v3 = MODO 1 REF. full_body.png tem DOIS PAPEIS: (1) imagem inicial do img2img (VAEEncode); (2) unica referencia do IP-Adapter (Encoder). Intencional, registrado como dual_role. Sem CombineEmbeds: com uma referencia so, o Encoder alimenta o IPAdapterEmbeds direto (pos na saida 0, neg na saida 1).",
   "_pipeline": "img2img",
-  "_reference_count": 3,
+  "_reference_count": 1,
   "_primary_image_role": "source_image",
-  "_mode": "3_REF_FULL_BODY_FACE_OUTFIT",
+  "_mode": "1_REF_FULL_BODY",
   "1": {
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
@@ -93,24 +93,6 @@
       "filename_prefix": "%%OUTPUT_PREFIX%%"
     }
   },
-  "6": {
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Referencia IP-Adapter: face"
-    },
-    "inputs": {
-      "image": "%%REF_FACE%%"
-    }
-  },
-  "7": {
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Referencia IP-Adapter: outfit"
-    },
-    "inputs": {
-      "image": "%%REF_OUTFIT%%"
-    }
-  },
   "10": {
     "class_type": "IPAdapterModelLoader",
     "_meta": {
@@ -150,90 +132,6 @@
       ]
     }
   },
-  "13": {
-    "class_type": "IPAdapterEncoder",
-    "_meta": {
-      "title": "Encode face (peso %%WEIGHT_FACE%%)"
-    },
-    "inputs": {
-      "ipadapter": [
-        "10",
-        0
-      ],
-      "image": [
-        "6",
-        0
-      ],
-      "weight": "%%WEIGHT_FACE%%",
-      "clip_vision": [
-        "11",
-        0
-      ]
-    }
-  },
-  "14": {
-    "class_type": "IPAdapterEncoder",
-    "_meta": {
-      "title": "Encode outfit (peso %%WEIGHT_OUTFIT%%)"
-    },
-    "inputs": {
-      "ipadapter": [
-        "10",
-        0
-      ],
-      "image": [
-        "7",
-        0
-      ],
-      "weight": "%%WEIGHT_OUTFIT%%",
-      "clip_vision": [
-        "11",
-        0
-      ]
-    }
-  },
-  "15": {
-    "class_type": "IPAdapterCombineEmbeds",
-    "_meta": {
-      "title": "Combinar embeds POSITIVOS"
-    },
-    "inputs": {
-      "embed1": [
-        "12",
-        0
-      ],
-      "embed2": [
-        "13",
-        0
-      ],
-      "embed3": [
-        "14",
-        0
-      ],
-      "method": "%%COMBINE_METHOD%%"
-    }
-  },
-  "16": {
-    "class_type": "IPAdapterCombineEmbeds",
-    "_meta": {
-      "title": "Combinar embeds NEGATIVOS"
-    },
-    "inputs": {
-      "embed1": [
-        "12",
-        1
-      ],
-      "embed2": [
-        "13",
-        1
-      ],
-      "embed3": [
-        "14",
-        1
-      ],
-      "method": "%%COMBINE_METHOD%%"
-    }
-  },
   "20": {
     "class_type": "IPAdapterEmbeds",
     "_meta": {
@@ -249,12 +147,12 @@
         0
       ],
       "pos_embed": [
-        "15",
+        "12",
         0
       ],
       "neg_embed": [
-        "16",
-        0
+        "12",
+        1
       ],
       "weight": "%%IPADAPTER_WEIGHT%%",
       "weight_type": "%%WEIGHT_TYPE%%",
@@ -266,7 +164,7 @@
   "40": {
     "class_type": "KSampler",
     "_meta": {
-      "title": "img2img + 3 refs (denoise < 1.0)"
+      "title": "img2img + 1 ref (denoise < 1.0)"
     },
     "inputs": {
       "seed": "%%SEED%%",
