@@ -1,0 +1,11 @@
+# Dependencias de teste (nao sao runtime da CLI).
+# O .venv nao persiste entre sessoes: reinstale com
+#   python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0
+nbformat>=5.9
+matplotlib>=3.7
+scikit-image>=0.22
+scipy>=1.11
+opencv-python-headless>=4.9
+psutil>=5.9
+ipython>=8.0

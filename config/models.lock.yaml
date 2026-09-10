@@ -1,0 +1,580 @@
+# ChibiCreate — registro travado de modelos
+#
+# REGRA DURA: nenhum modelo entra na pipeline comercial sem uma entrada aqui
+# com nome, repositorio, revisao, licenca, URL e data de verificacao.
+#
+# DOIS NIVEIS DE VERIFICACAO — nao confundir:
+#
+#   license.verified: true   licenca lida em FONTE PRIMARIA, revisao registrada
+#   weights.verified: true   arquivo baixado e sha256 conferido
+#
+# Um modelo pode ter licenca verificada sem ter pesos baixados. Isso e normal.
+# Para uso comercial exigimos license.verified. Para EXECUTAR exigimos tambem
+# weights.verified.
+#
+# A pipeline NAO baixa modelos automaticamente (AGENTS.md §2).
+
+schema_version: 2
+last_reviewed: "2026-09-08"
+
+models:
+
+  qwen_image_edit_2511:
+    role: identity_edit
+    display_name: Qwen-Image-Edit-2511
+    repo: Qwen/Qwen-Image-Edit-2511
+    source_url: https://huggingface.co/Qwen/Qwen-Image-Edit-2511
+    revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    revision_date: "2025-12-23T13:13:52.000Z"
+    created_at: "2025-12-17T05:55:58.000Z"
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://huggingface.co/api/models/Qwen/Qwen-Image-Edit-2511
+      evidence: >
+        Metadados oficiais do repositorio HuggingFace (endpoint /api/models) na
+        revisao 6f3ccc0b: cardData.license = "apache-2.0" e tag
+        "license:apache-2.0". gated=false, private=false. Nenhuma ressalva
+        encontrada no repositorio, diferente do ControlNet Union (ver ADR-004).
+    weights:
+      verified: false
+      # Repositorio diffusers multi-arquivo. sha256 por arquivo so pode ser
+      # calculado apos download real (nao feito: ver limitacoes de ambiente).
+      files:
+        - transformer/diffusion_pytorch_model-0000{1..5}-of-00005.safetensors
+        - text_encoder/model-0000{1..4}-of-00004.safetensors
+        - vae/diffusion_pytorch_model.safetensors
+      sha256: null
+      total_storage_bytes: 57715696541    # ~57.7 GB, informado pelo HF
+      note: >
+        Pesos NAO baixados. Formato oficial e BF16 (20.43B params). Para uso
+        pratico em GPU menor existem quantizacoes GGUF de terceiros, que sao
+        OUTROS repositorios e exigem verificacao de licenca propria.
+    params: 20430401088
+    dtype: BF16
+    pipeline: QwenImageEditPlusPipeline
+    library: diffusers
+
+    # ------------------------------------------------------------------
+    # Redistribuicao oficial em arquivo unico, para ComfyUI.
+    # Repo: Comfy-Org/Qwen-Image-Edit_ComfyUI  sha 984166f60a9b1fcede5e9b9287b7a7aebc050010
+    # Licenca: Apache-2.0 (cardData.license, verificado em /api/models 2026-09-08)
+    # Mantido pela Comfy-Org, NAO e quantizacao comunitaria arbitraria.
+    #
+    # ATENCAO: nao existe variante fp8_e4m3fn do 2511. Existe para o 2509 e
+    # para o Qwen-Image-Edit original. Confundir os dois foi um bug real
+    # corrigido em cloud.yaml nesta data.
+    #
+    # sha256 abaixo = campo lfs.oid do HuggingFace (que E o sha256 do
+    # arquivo). NAO conferido localmente: pesos nunca baixados aqui.
+    # weights.verified permanece false ate um download real conferir.
+    comfyui_single_file:
+      repo: Comfy-Org/Qwen-Image-Edit_ComfyUI
+      revision: 984166f60a9b1fcede5e9b9287b7a7aebc050010
+      license: Apache-2.0
+      license_verified_on: "2026-09-08"
+      verified: false
+      variants:
+        qwen_image_edit_2511_bf16.safetensors:
+          path: split_files/diffusion_models/qwen_image_edit_2511_bf16.safetensors
+          size_bytes: 40861031560
+          sha256: ae42d927b5fac4f278b9a894554c727e619727a63622976f2d95625be4bce08c
+          note: precisao total; nao cabe em GPU de 16-24 GB
+        qwen_image_edit_2511_fp8mixed.safetensors:
+          path: split_files/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors
+          size_bytes: 20533762817
+          sha256: c9fdc158e46d3b61ef75f21ae866ca2fe808bf4a53643120d1c1e87c19280a4e
+          note: variante escolhida em cloud.yaml. ~20.5 GB de pesos
+        qwen_image_edit_2511_int8_convrot.safetensors:
+          path: split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors
+          size_bytes: 20499083824
+          sha256: 11b5af5ac601821d73930c84846c9a158e67177356daf927ce1c8d10f3963829
+          note: int8; nao avaliado
+
+  qwen_2_5_vl_7b_text_encoder:
+    role: text_encoder
+    display_name: Qwen2.5-VL 7B (text encoder para Qwen-Image)
+    repo: Comfy-Org/Qwen-Image_ComfyUI
+    revision: 7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f
+    source_url: https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://huggingface.co/api/models/Comfy-Org/Qwen-Image_ComfyUI
+    weights:
+      verified: false
+      files:
+        qwen_2.5_vl_7b_fp8_scaled.safetensors:
+          path: split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+          size_bytes: 9384670680
+          sha256: cb5636d852a0ea6a9075ab1bef496c0db7aef13c02350571e388aea959c5c0b4
+        qwen_2.5_vl_7b.safetensors:
+          path: split_files/text_encoders/qwen_2.5_vl_7b.safetensors
+          size_bytes: 16584415576
+          sha256: cfafd739459bc86257397259f612a9aee88e5b98e85b5c0d0d1717e898b3463a
+          note: precisao total; nao usado no experimento Colab
+
+  qwen_image_vae:
+    role: vae
+    display_name: Qwen-Image VAE
+    repo: Comfy-Org/Qwen-Image_ComfyUI
+    revision: 7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f
+    source_url: https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://huggingface.co/api/models/Comfy-Org/Qwen-Image_ComfyUI
+    weights:
+      verified: false
+      files:
+        qwen_image_vae.safetensors:
+          path: split_files/vae/qwen_image_vae.safetensors
+          size_bytes: 253806246
+          sha256: a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f
+    vram_notes: "Q4_0 ~11.9GB / Q4_K_M ~13.2GB / FP8 ~20.5GB / BF16 ~40.9GB"
+    runs_on: cloud
+    required_for_phase: 3
+
+  flux2_klein_4b:
+    role: identity_edit_candidate
+    display_name: FLUX.2 [klein] 4B
+    repo: black-forest-labs/FLUX.2-klein-4B
+    source_url: https://huggingface.co/black-forest-labs/FLUX.2-klein-4B
+    revision: e7b7dc27f91deacad38e78976d1f2b499d76a294
+    revision_date: "2026-02-24T00:18:56.000Z"
+    created_at: "2026-01-14T13:42:59.000Z"
+    status: experimental_candidate
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/raw/main/LICENSE.md
+      evidence: >
+        Duas fontes primarias na revisao e7b7dc27. (1) LICENSE.md do repositorio
+        e o texto integral da Apache License 2.0. (2) O model card afirma
+        explicitamente: "Open weights available for commercial use under the
+        Apache 2.0 license". gated=false, private=false.
+
+        DISTINCAO CRITICA confirmada pela propria BFL no card: "release of the
+        open-weight FLUX.2 [klein] 4B models under an Apache 2.0 license and the
+        release of the FLUX.2 [klein] 9B models under a non-commercial license".
+        Somente a variante 4B e comercialmente utilizavel. A 9B NAO e.
+
+        O card lista restricoes de uso (conteudo ilegal, CSAM, NCII, assedio,
+        desinformacao) e declara que nada nele restringe ou modifica a licenca.
+        Sao limites de conduta, nao restricao comercial.
+    weights:
+      verified: false
+      note: >
+        Pesos NAO baixados. Repositorio diffusers (Flux2KleinPipeline) e tambem
+        arquivo unico flux-2-klein-4b.safetensors. 3.875B params BF16,
+        usedStorage ~23.7 GB (inclui text_encoder e VAE).
+      sha256: null
+    params: 3875544576
+    dtype: BF16
+    pipeline: Flux2KleinPipeline
+    library: diffusers
+    vram_note: >
+      Model card oficial: "runs on consumer hardware, with as little as 13GB
+      VRAM" e "fits in ~13GB VRAM ... NVIDIA RTX 3090/4070 and above".
+      comfy.org cita ~8 GB para o 4B. [TEST REQUIRED] nao medido por nos.
+    capabilities:
+      multi_reference: true
+      multi_reference_note: >
+        Nativo via node ReferenceLatent do ComfyUI, encadeavel. NAO exige
+        custom node. O card declara "supports multi-reference editing".
+      distilled: true
+      distilled_note: >
+        Modelo destilado: ~4 passos, cfg 1.0 (guidance embutida). cfg != 1.0
+        produz imagem lavada.
+
+    # Redistribuicao oficial em arquivo unico, para ComfyUI.
+    # Licenca Apache-2.0 verificada em /api/models 2026-09-08.
+    # sha256 = campo lfs.oid do HuggingFace. NAO conferido localmente.
+    comfyui_single_file:
+      repo: Comfy-Org/vae-text-encorder-for-flux-klein-4b
+      revision: 5f526678002e43af5551dadb73ce2e8c91b43afe
+      license: Apache-2.0
+      license_verified_on: "2026-09-08"
+      verified: false
+      files:
+        flux-2-klein-4b.safetensors:
+          path: split_files/diffusion_models/flux-2-klein-4b.safetensors
+          size_bytes: 7751105712
+          sha256: ec3d4e733a771f61c052fb4856c48b336c55eaf2c65487c2a1faeb9bbda7a343
+          note: variante DESTILADA — e esta que usamos
+        flux-2-klein-base-4b.safetensors:
+          path: split_files/diffusion_models/flux-2-klein-base-4b.safetensors
+          size_bytes: 7751105712
+          sha256: 9c5fed22b76baea749d88fc2abe3ad53245e7b21a0d353a762665eea00043b92
+          note: NAO destilada. Nao confundir com a de cima.
+        qwen_3_4b.safetensors:
+          path: split_files/text_encoders/qwen_3_4b.safetensors
+          size_bytes: 8044982048
+          sha256: 6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a
+          note: text encoder do FLUX.2 e um Qwen3-4B (coincidencia de nome com o Qwen-Image)
+        qwen_3_4b_fp4_flux2.safetensors:
+          path: split_files/text_encoders/qwen_3_4b_fp4_flux2.safetensors
+          size_bytes: 3848213998
+          sha256: 3eab03a77adb0ee5304a4e677d5c10ac22f9049c1d7c894adca4f8bb39206ca8
+          note: alternativa fp4 para GPU apertada. [TEST REQUIRED]
+        flux2-vae.safetensors:
+          path: split_files/vae/flux2-vae.safetensors
+          size_bytes: 336211292
+          sha256: 868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3
+
+  qwen_image_controlnet_union:
+    role: pose_control
+    display_name: Qwen-Image-ControlNet-Union (InstantX)
+    repo: InstantX/Qwen-Image-ControlNet-Union
+    source_url: https://huggingface.co/InstantX/Qwen-Image-ControlNet-Union
+    revision: b13036f066d6dee7c20513e263d3d673055e9de8
+    revision_date: "2025-08-26T18:09:04Z"
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: pending_human_review
+      commercial_blocker: >
+        Ressalva do "All copyright reserved" no README (ver caveat). Uso
+        TECNICO liberado; uso COMERCIAL aguarda decisao humana registrada.
+      source_url: https://huggingface.co/api/models/InstantX/Qwen-Image-ControlNet-Union
+      evidence: >
+        Metadados oficiais do repositorio HuggingFace (endpoint /api/models)
+        na revisao b13036f0: cardData.license = "apache-2.0" e tag
+        "license:apache-2.0". Card confirma os modos canny, soft edge, depth
+        e pose. Modelo de 2B params, BF16.
+      caveat: >
+        ATENCAO: a secao "Acknowledgements" do README do mesmo repositorio diz
+        "All copyright reserved", o que aparenta conflitar com a tag Apache-2.0
+        declarada nos metadados. A licenca declarada formalmente prevalece para
+        fins de registro, mas o conflito fica documentado. Se o uso comercial
+        deste componente se tornar critico, confirmar com o InstantX Team.
+        Ver LICENSES.md.
+    weights:
+      verified: false
+      files:
+        - diffusion_pytorch_model.safetensors
+      sha256: null
+      note: "Pesos nao baixados. Necessario apenas na FASE 5."
+    params: 1768003584
+    dtype: BF16
+    runs_on: cloud
+    required_for_phase: 5
+
+  birefnet:
+    role: background_removal
+    display_name: BiRefNet (general)
+    repo: ZhengPeng7/BiRefNet
+    source_url: https://github.com/ZhengPeng7/BiRefNet
+    weights_url: https://huggingface.co/ZhengPeng7/BiRefNet
+    revision: e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4
+    revision_date: "2026-02-04T22:43:55Z"
+    code_revision: ebcc0bc8ec7fe919cec829f2dea656b3078acddc
+    license:
+      spdx: MIT
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-08"
+      technical_status: verified
+      commercial_status: approved
+      source_url: https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE
+      evidence: >
+        Repositorio oficial GitHub ZhengPeng7/BiRefNet contem arquivo LICENSE
+        MIT (commit 2713d1293ce8a923d5878f1f30177b78770bf24c, "Add the MIT
+        LICENSE."). O repositorio de PESOS no HuggingFace
+        (ZhengPeng7/BiRefNet, revisao e2bf8e44) declara cardData.license =
+        "mit" e tag "license:mit". Codigo E pesos sob MIT — comercial livre.
+      notes: >
+        Paper: CAAI AIR'24, arXiv 2401.03407. Existem variantes (general, HR,
+        portrait, matting); esta entrada cobre a "general". Registrar variante
+        adicional como entrada propria se for adotada.
+    weights:
+      verified: false
+      files:
+        - model.safetensors
+      sha256: null
+      size_note: "~220M params (F16)"
+      note: >
+        Pesos nao baixados. Necessario na FASE 2 apenas se o isolamento
+        automatico de fundo for exigido; o FLOW 01 opera sem ele quando a
+        arte-fonte ja possui alpha.
+    runs_on: local
+    required_for_phase: 2
+
+  real_esrgan_anime_6b:
+    role: upscale
+    display_name: RealESRGAN_x4plus_anime_6B
+    repo: xinntao/Real-ESRGAN
+    source_url: https://github.com/xinntao/Real-ESRGAN
+    revision: null
+    license:
+      spdx: BSD-3-Clause
+      commercial_use: allowed
+      verified: false            # [TEST REQUIRED] conferir LICENSE no repo
+      verified_on: null
+      source_url: null
+      notes: "Preferir checkpoint .safetensors; evitar PickleTensor."
+    weights:
+      verified: false
+      files: []
+      sha256: null
+    runs_on: local
+    required_for_phase: 3
+  wai_illustrious_sdxl_v170:
+    display_name: WAI-illustrious-SDXL v17.0
+    # TIPO: checkpoint completo (merge/finetune SDXL), NAO LoRA, NAO adapter.
+    type: checkpoint
+    architecture: SDXL
+    base_model: Illustrious-XL 1.0 (a partir da v14.0, por declaracao do autor)
+    author: WAI0731
+    source: civitai
+    source_url: https://civitai.red/models/827184/wai-illustrious-sdxl
+    requested_file: waiIllustriousSDXL_v170.safetensors
+    status: MODEL_MISSING
+    technical_status: not_verified
+    sha256: null                     # so apos obter o arquivo
+    size_bytes: null
+    revision: "v17.0"
+
+    missing_reason: >
+      Arquivo NAO obtido. civitai.red, civitai.com e huggingface.co estao fora
+      da allowlist de egress desta sandbox (TLS EOF no handshake). Conforme a
+      secao 3 da diretiva, NAO foi buscada versao alternativa: nem v15/v16,
+      nem mirror de terceiro, nem merge parecido.
+
+    license:
+      spdx: null
+      name: Fair AI Public License 1.0-SD (FAIPL-1.0-SD)
+      inherited_from: Illustrious-XL (OnomaAI)
+      license_link: https://freedevproject.org/faipl-1.0-sd/
+      verified: false
+      verified_on: "2026-09-08"
+      commercial_status: pending_human_review
+      source_of_claim: >
+        Pagina do modelo informada pelo usuario + model cards espelho no
+        HuggingFace (John6666/wai-nsfw-illustrious-*) que declaram
+        license_name: faipl-1.0-sd. A pagina Civitai NAO pode ser lida
+        diretamente por esta sandbox.
+
+      # Os quatro eixos exigidos pela diretiva, mantidos SEPARADOS.
+      axes:
+        model_use:
+          status: permitido
+          note: "Uso do checkpoint para gerar imagens nao e restrito pela FAIPL."
+        output_use:
+          status: pending_human_review
+          note: >
+            FAIPL-1.0-SD tem clausula de Output em que o licenciante NAO
+            reivindica direitos sobre o gerado. Ha porem interpretacao publica
+            divergente sobre a proibicao de "monetizacao proprietaria
+            closed-source". NAO afirmamos que o uso comercial do output e
+            proibido — afirmamos que e AMBIGUO e precisa de decisao humana.
+        model_distribution:
+          status: restrito
+          note: "Share-alike: redistribuir o checkpoint exige manter FAIPL."
+        derivatives:
+          status: restrito
+          note: "Derivados (merge, LoRA treinada em cima) herdam a FAIPL."
+
+      conflict_with_project: >
+        O projeto e um JOGO closed-source. A clausula share-alike da FAIPL
+        atinge o MODELO e derivados, nao necessariamente o output — mas essa
+        e exatamente a fronteira em disputa. Ver LICENSES.md.
+
+    ecosystem: sdxl
+    # Parametros do ECOSSISTEMA SDXL/Illustrious, do autor do checkpoint.
+    # NAO copiar do FLUX (cfg 1.0/4 steps) nem do Qwen (cfg 2.5/20 steps).
+    recommended_sampling:
+      sampler: euler_ancestral
+      scheduler: normal
+      steps: 30
+      cfg: 7.0
+      resolution_note: "usar >= 1024x1024; nativo ate 1536x1536"
+      source: >
+        Descricao do proprio autor na pagina do modelo (Steps 30, CFG 7,
+        Euler a). Faixa corroborada por agregadores (15-30 steps, CFG 5-7).
+      verified_against_official_card: false
+
+    notes: >
+      [HUMAN REVIEW REQUIRED] Checkpoint com foco declarado em NSFW (nome
+      original WAI-NSFW-illustrious-SDXL). Nao adicionamos tags NSFW ao
+      prompt; registramos o fato porque afeta o comportamento do modelo e a
+      adequacao ao projeto.
+
+  waifu_inpaint_xl:
+    role: local_inpaint_design_repair
+    display_name: Waifu-Inpaint-XL
+    repo: ShinoharaHare/Waifu-Inpaint-XL
+    source_url: https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL
+    revision: unknown
+    revision_note: >-
+      Revisao NAO registrada: o repositorio e gated e a API de metadados nao
+      responde sem token. A listagem publica mostra o commit
+      dd4c2b3ee244eb37b34d157204851f7503c372f8 para o upload do
+      safetensors, mas nao foi possivel confirmar via fonte primaria
+      autenticada. Preencher no aceite.
+    revision_date: unknown
+    architecture:
+      base: sdxl
+      unet_in_channels: 9
+      channels_note: >-
+        4 latente + 1 mascara + 4 latente mascarado. Exige
+        InpaintModelConditioning no ComfyUI; CheckpointLoaderSimple sozinho
+        nao alimenta os canais extras.
+      prediction_type: v_prediction
+      prediction_note: >-
+        Herdado do WAI V14.0-V-Prediction. Configuracao epsilon produz
+        imagem queimada.
+    lineage:
+      - KBlueLeaf/kohaku-xl-beta5
+      - OnomaAIResearch/Illustrious-xl-early-release-v0
+      - ShinoharaHare/WAI-NSFW-illustrious-SDXL-V14.0-V-Prediction
+      - ShinoharaHare/Waifu-Inpaint-XL
+    lineage_note: >-
+      NAO e o waiIllustriousSDXL_v170 do nosso benchmark. Linhagem, arquitetura
+      e licenca sao proprias e nao se misturam com as dele.
+    license:
+      spdx: CreativeML-OpenRAIL-M-plus-plus
+      name: CreativeML Open RAIL++-M
+      commercial_use: pending_human_review
+      verified: false
+      verified_on: null
+      technical_status: declared_by_model_card
+      commercial_status: pending_human_review
+      source_url: https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL
+      evidence: >-
+        Model card declara "License: CreativeML Open RAIL++-M" com link para a
+        licenca do stable-diffusion-xl-base-1.0. NAO confirmado em arquivo de
+        licenca dentro do repositorio: o gate impede acessar os arquivos. A
+        cadeia inclui Illustrious e WAI, cujos termos ja estao em revisao
+        neste repo; licenca nao se herda automaticamente por linhagem.
+    gated:
+      is_gated: true
+      gate_type: contact_information_sharing
+      note: >-
+        "You need to agree to share your contact information to access this
+        model." A listagem de arquivos e publica; o download exige login,
+        aceite manual e token. E um ato pessoal do operador — nao pode ser
+        automatizado nem contornado.
+      verified_on: "2026-09-10"
+      evidence: >-
+        GET em /resolve/main/model_index.json sem token retorna: "Access to
+        model ShinoharaHare/Waifu-Inpaint-XL is restricted. You must have
+        access to it and be authenticated to access it. Please log in."
+        Resposta do proprio HuggingFace, nao inferencia.
+    weights:
+      verified: false
+      files:
+        - Waifu-Inpaint-XL.safetensors
+      sha256: null
+      total_storage_bytes: 6940000000
+      total_storage_bytes_estimated: true
+      note: >-
+        Pesos NAO baixados: repositorio gated. 6.94 GB conforme a listagem
+        publica (nao conferido). O sha256 e calculado e impresso pela celula 4
+        de notebooks/waifu_inpaint_eval.ipynb assim que o arquivo estiver no
+        Drive; registrar aqui depois disso, junto com o tamanho real.
+    params: 3000000000
+
+  sdxl_inpainting_01:
+    role: masked_inpaint
+    display_name: SD-XL Inpainting 0.1
+    repo: diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+    source_url: https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+    revision: 115134f363124c53c7d878647567d04daf26e41e
+    revision_date: "2023-09-03T16:36:39.000Z"
+    created_at: "2023-09-01T14:07:10.000Z"
+    base_model: stabilityai/stable-diffusion-xl-base-1.0
+    license:
+      name: CreativeML Open RAIL++-M
+      url: https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENSE.md
+      verified: true
+      verified_at: "2026-09-09"
+      commercial: allowed_with_use_restrictions
+      note: >
+        Permite uso comercial, mas anexa lista de usos proibidos que precisa
+        ser propagada a jusante. [HUMAN REVIEW REQUIRED] antes de distribuir.
+    weights:
+      verified: false
+      note: "Nao baixado. Download e explicito no notebook, nunca automatico."
+      files:
+        - unet/diffusion_pytorch_model.fp16.safetensors
+        - text_encoder/model.fp16.safetensors
+        - text_encoder_2/model.fp16.safetensors
+        - vae/diffusion_pytorch_model.fp16.safetensors
+    requirements:
+      params: 3B
+      native_resolution: 1024
+      vram_fp16_gb: 8.0
+      variant: fp16
+      fits_colab_t4: true
+      note: "T4 tem 15 GB; ~8 GB em fp16 cabe com folga. Sem bf16 nativo."
+    parameters:
+      guidance_scale: 8.0
+      num_inference_steps: 20
+      strength: 0.85
+      seed: 42
+      note: >
+        strength < 1.0 e exigencia do model card: em 1.0 a qualidade degrada.
+        steps 15-30 conforme recomendacao oficial.
+    usage: >
+      FASE B do design transfer. Edita SOMENTE dentro da mascara transformada
+      para o espaco da Run 003. Nunca recebe a imagem inteira para redesenhar
+      a personagem. Nao substitui o FLUX nem o Flow 01.
+    approval_status: experimental
+
+
+
+# Modelos explicitamente REJEITADOS para dependencia comercial.
+rejected:
+
+  bria_rmbg_2_0:
+    display_name: BRIA RMBG-2.0
+    reason: >
+      Pesos sob CC BY-NC 4.0. Producao exige contrato pago com a BRIA ou uso
+      da API. Nao usar como dependencia padrao (spec §18).
+    alternative: birefnet
+
+  flux_dev_family:
+    display_name: FLUX.1 [dev] / FLUX.2 [dev] / FLUX.2 [klein] 9B
+    reason: "Licenca nao-comercial da Black Forest Labs; exige licenca paga."
+    alternative: qwen_image_edit_2511
+
+  noobai_xl:
+    display_name: NoobAI-XL / Pony
+    reason: "Model card adiciona proibicao explicita de comercializacao."
+    alternative: qwen_image_edit_2511
+
+  seedvr2:
+    display_name: SeedVR2
+    reason: "Licenca restringe uso comercial."
+    alternative: real_esrgan_anime_6b
+
+# Modelos em zona cinzenta — decisao JURIDICA pendente, nao tecnica.
+flagged:
+
+  illustrious_xl:
+    display_name: Illustrious-XL 1.1
+    issue: >
+      FAIPL 1.0 / CreativeML Open RAIL. Diz que o output nao e coberto, mas
+      proibe "monetizacao proprietaria closed-source". Interpretacoes conflitam.
+    decision: pending_legal
+    allowed_use: "prototipagem/exploracao de estilo apenas; NAO no build"

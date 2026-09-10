@@ -1,0 +1,822 @@
+# Registry central da matriz de avaliacao de modelos (FASE 3B).
+#
+# ESTE ARQUIVO E A UNICA FONTE DA VERDADE dos dois notebooks:
+#   notebooks/model_eval_model_only.ipynb    (Original -> Modelo)
+#   notebooks/model_eval_flux_refiner.ipynb  (FLUX run_003 -> Modelo)
+#
+# Regra: nenhum condicional de modelo espalhado pelos notebooks. Se algo
+# muda entre modelos, muda AQUI.
+#
+# AVISO SOBRE HASHES: sha256 de pesos so e preenchido depois de baixar e
+# conferir de fato. Onde nao houve download, o campo fica `null` com
+# `hash_verified: false`. Nao inventamos hash.
+#
+# AVISO SOBRE TAMANHOS: `download_gb` e `vram_gb` marcados
+# `estimated: true` vem de documentacao/model card, NAO de medicao nossa.
+# O preflight compara contra eles, mas eles nao sao medida do agente.
+
+schema_version: 1
+
+# Prompt comum a toda a matriz. Override por modelo em `prompt_override`.
+base_prompt: >-
+  Preserve the exact same character identity, face, hair, eyes, horns, body
+  proportions, color palette, and overall chibi style from the input image.
+  Preserve the original character design shown in the reference images,
+  especially the clothing, cape, golden ornaments, accessories, and their
+  shapes and placement. Do not redesign, replace, modernize, sexualize,
+  simplify away, or invent clothing elements. Redraw the character as a clean
+  polished game/gacha chibi character while keeping the original outfit design
+  recognizable and faithful to the references. Only make changes necessary to
+  adapt the original design naturally to the chibi proportions. Full body,
+  front-facing, clean silhouette, consistent lineart, polished game art, soft
+  shading, highly readable at small size. The output should look like the same
+  original character converted into chibi form, not a new character inspired
+  by the original.
+
+# Sem negative prompt automatico, por instrucao. Um modelo so ganha negative
+# se a documentacao dele exigir, e ai fica registrado como override.
+base_negative_prompt: ""
+
+character: waifu_001
+
+# Eixos de avaliacao. OVERALL nao existe aqui de proposito: nao ha formula.
+evaluation_axes: [STYLE, IDENTITY, DESIGN_PRESERVATION]
+primary_axis: DESIGN_PRESERVATION
+
+# Itens que a analise visual deve cobrir explicitamente.
+inspection_checklist:
+  - roupa
+  - capa
+  - ornamentos
+  - acessorios
+  - chifres
+  - cabelo
+  - rosto
+  - silhueta
+  - proporcoes_chibi
+  - preservacao_de_cores
+  - detalhes_inventados_ou_removidos
+
+models:
+
+  # ------------------------------------------------------------------
+  longcat_image_edit:
+    label: "LongCat-Image-Edit"
+    repo: meituan-longcat/LongCat-Image-Edit
+    revision: null                 # nao fixada: nao baixamos para conferir
+    revision_verified: false
+    params: "6B (transformer) + Qwen2.5-VL-7B como text encoder"
+    pipeline_type: instruction_edit_single_image
+    input_mode: image_plus_instruction
+
+    # CAPACIDADE REAL, nao desejada. O card oficial documenta UMA imagem de
+    # entrada. Multi-image foi declarado "prioridade da proxima versao" pelos
+    # autores, ou seja: nao existe hoje.
+    references_supported: 0
+    reference_limitation: >-
+      Aceita apenas UMA imagem. Nao ha slot para referencias de design
+      adicionais. No Notebook 2 a imagem editada e a saida do FLUX e
+      full_body/outfit NAO entram — a limitacao e registrada no recipe, nunca
+      contornada em silencio.
+
+    parameters:
+      steps: 50
+      cfg: 4.5
+      sampler: default_pipeline
+      scheduler: default_pipeline
+      denoise: null                # editor por instrucao: nao expoe denoise
+      resolution: [1024, 1024]
+      batch: 1
+      resolution_note: "O codigo oficial suporta ~1MP."
+
+    download_gb: 24.0
+    download_estimated: true
+    vram_gb: 18.0
+    vram_estimated: true
+    vram_note: >-
+      ~18 GB exigem enable_model_cpu_offload() conforme o card oficial. Sem
+      offload o requisito e maior. Nao medimos.
+    disk_gb: 30.0
+    ram_gb: 16.0
+
+    license: apache-2.0
+    license_source: "model card oficial HF (meituan-longcat/LongCat-Image-Edit)"
+    license_verified: true
+    commercial_status: verified
+    third_party_quantization: false
+
+    status: CANDIDATE
+    notes: >-
+      Nao assumir que e leve por ser 6B: o text encoder Qwen2.5-VL-7B entra
+      por cima. Preflight real obrigatorio.
+
+  # ------------------------------------------------------------------
+  z_image_turbo:
+    label: "Z-Image Turbo"
+    repo: Tongyi-MAI/Z-Image-Turbo
+    revision: null
+    revision_verified: false
+    params: "6B S3-DiT"
+
+    # PONTO CRITICO DE HONESTIDADE: Z-Image Turbo e TEXT-TO-IMAGE. Nao e
+    # editor por instrucao e nao tem slot de referencia. Z-Image-Edit foi
+    # anunciado mas nao lancado. Usar via img2img latente (VAEEncode +
+    # denoise < 1.0) e legitimo e foi autorizado explicitamente pelo
+    # usuario, mas NAO e edicao por instrucao e nao preserva design da
+    # mesma forma. Nao vamos fingir o contrario.
+    pipeline_type: text_to_image_with_img2img_latent
+    input_mode: img2img_latent
+    references_supported: 0
+    reference_limitation: >-
+      NAO e um editor multi-reference. E um gerador text-to-image usado em
+      modo img2img (VAEEncode + denoise). Nao existe slot para full_body nem
+      outfit: o unico condicionamento visual e a propria imagem de entrada,
+      via latente. A fidelidade ao design depende inteiramente do denoise.
+    capability_warning: >-
+      Z-Image-Edit foi anunciado pela Tongyi-MAI mas nao lancado ate a data
+      deste registry. Qualquer resultado aqui mede img2img, nao edicao.
+
+    parameters:
+      steps: 8
+      cfg: 1.0
+      sampler: euler
+      scheduler: simple
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+      cfg_note: >-
+        Turbo e destilado para poucos passos; o card usa guidance baixo.
+        cfg 4.5 e 50 steps sao do Z-Image BASE, nao do Turbo.
+
+    download_gb: 14.0
+    download_estimated: true
+    vram_gb: 16.0
+    vram_estimated: true
+    disk_gb: 20.0
+    ram_gb: 12.0
+
+    license: apache-2.0
+    license_source: "model card oficial HF (Tongyi-MAI) + repo GitHub"
+    license_verified: true
+    commercial_status: verified
+    third_party_quantization: false
+
+    status: CANDIDATE
+    notes: >-
+      No Notebook 2 so faz sentido como img2img da saida do FLUX. Registrar
+      exatamente essa limitacao no recipe.
+
+  # ------------------------------------------------------------------
+  qwen_edit_2511_q3_k_m:
+    label: "Qwen-Image-Edit-2511 Q3_K_M"
+    repo: unsloth/Qwen-Image-Edit-2511-GGUF
+    # NOME EXATO conferido na arvore de arquivos do repo: minusculo, com
+    # o sufixo de quantizacao em maiusculo. A grafia
+    # "Qwen-Image-Edit-2511-Q3_K_M.gguf" NAO existe e da 404.
+    file: qwen-image-edit-2511-Q3_K_M.gguf
+    file_verified: true
+    file_size_gb: 9.92
+    revision: null
+    revision_verified: false
+    base_model: Qwen/Qwen-Image-Edit-2511
+    base_model_revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    # O GGUF sozinho NAO roda: o UnetLoaderGGUF carrega so o difusor. Sao
+    # necessarios ainda o text encoder Qwen2.5-VL-7B, o mmproj (projecao
+    # multimodal, exigida pelo encoder em GGUF) e o VAE. Sem eles o
+    # workflow falha depois do download, com 20 GB ja gastos.
+    auxiliary_files:
+      - role: text_encoder
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+        dest: text_encoders
+        size_gb: 9.38
+      - role: vae
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/vae/qwen_image_vae.safetensors
+        dest: vae
+        size_gb: 0.25
+    params: "20B (quantizado)"
+    pipeline_type: instruction_edit_multi_image
+    input_mode: image_plus_instruction
+
+    # TextEncodeQwenImageEditPlus (Core) aceita image1/image2/image3.
+    # A principal ocupa image1 => sobram 2 slots de referencia.
+    references_supported: 2
+    reference_limitation: >-
+      3 imagens no total (node Core). A principal ocupa image1, sobrando 2
+      slots. face.png fica de fora quando full_body e outfit sao usados.
+
+    # BLOQUEIO DECLARADO: GGUF exige custom node de terceiro.
+    requires_custom_node: ComfyUI-GGUF
+    custom_node_repo: https://github.com/city96/ComfyUI-GGUF
+    custom_node_ack_required: true
+    custom_node_note: >-
+      A regra do projeto proibe instalar custom nodes arbitrariamente e pegar
+      quantizacao comunitaria sem reportar. Q3_K_M/Q4_0 NAO existem em versao
+      oficial: sao quantizacoes de terceiro e so carregam via UnetLoaderGGUF
+      do custom node ComfyUI-GGUF. O notebook exige aceite EXPLICITO do
+      usuario antes de instalar qualquer coisa.
+
+    parameters:
+      steps: 20
+      cfg: 2.5
+      sampler: euler
+      scheduler: simple
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+
+    # ~9.8 GB de pesos + text encoder ~8 GB + VAE ~0.25 GB.
+    download_gb: 19.6
+    download_estimated: false
+    download_note: >-
+      9.92 (GGUF) + 9.38 (text encoder) + 0.25 (VAE). Tamanhos lidos da
+      arvore de arquivos dos repos.
+    vram_gb: 10.0
+    ram_estimated: true
+    ram_note: >-
+      NAO medido por nos. Num GGUF o text encoder (9.38 GB) e o VAE ficam na
+      RAM do sistema: e dai que vem a economia de VRAM. 16 GB e o valor
+      conservador para caber encoder + processo do ComfyUI + kernel.
+      IMPORTANTE: o Colab T4 tem ~12.7 GB de RAM, abaixo disso. RAM
+      insuficiente com GGUF nao levanta erro — o processo entra em swap e a
+      sessao TRAVA em silencio, que foi o sintoma observado na celula 9.
+      [TEST REQUIRED] confirmar o consumo real de RAM antes de baixar o
+      valor exigido.
+    vram_estimated: true
+    vram_note: >-
+      ~10 GB assumindo text encoder e VAE descarregados para a RAM do
+      sistema. Com tudo em VRAM o requisito sobe.
+    disk_gb: 25.0
+    ram_gb: 16.0
+
+    # DUAS licencas distintas: a do modelo-base e a da quantizacao.
+    license: apache-2.0
+    license_source: "Qwen/Qwen-Image-Edit-2511 (modelo-base), Apache 2.0"
+    license_verified: true
+    quantization_license: apache-2.0
+    quantization_license_source: >-
+      Card do unsloth/Qwen-Image-Edit-2511-GGUF declara Apache 2.0, herdada
+      do modelo-base. Nao confirmamos revision nem hash dos arquivos.
+    quantization_license_verified: false
+    quantization_author: unsloth
+    third_party_quantization: true
+    commercial_status: pending_human_review
+    commercial_status_reason: >-
+      O modelo-base e Apache 2.0 e comercialmente claro. A VARIANTE
+      quantizada e redistribuicao de terceiro, sem revision/hash conferidos
+      por nos. Separar as duas licencas e obrigatorio; nao marcar
+      commercial=true automaticamente.
+
+    status: CANDIDATE
+    try_first: true
+    notes: >-
+      Menor variante registrada: comecar por ela. Se funcionar, NAO baixar Q4
+      automaticamente — o usuario reseta o Colab e escolhe Q4 no dropdown.
+
+  # ------------------------------------------------------------------
+  qwen_edit_2511_q4_0:
+    label: "Qwen-Image-Edit-2511 Q4_0"
+    repo: unsloth/Qwen-Image-Edit-2511-GGUF
+    # NOME EXATO conferido na arvore de arquivos do repo (ver Q3_K_M).
+    file: qwen-image-edit-2511-Q4_0.gguf
+    file_verified: true
+    file_size_gb: 11.04
+    revision: null
+    revision_verified: false
+    base_model: Qwen/Qwen-Image-Edit-2511
+    base_model_revision: 6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9
+    # O GGUF sozinho NAO roda: o UnetLoaderGGUF carrega so o difusor. Sao
+    # necessarios ainda o text encoder Qwen2.5-VL-7B, o mmproj (projecao
+    # multimodal, exigida pelo encoder em GGUF) e o VAE. Sem eles o
+    # workflow falha depois do download, com 20 GB ja gastos.
+    auxiliary_files:
+      - role: text_encoder
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+        dest: text_encoders
+        size_gb: 9.38
+      - role: vae
+        repo: Comfy-Org/Qwen-Image_ComfyUI
+        file: split_files/vae/qwen_image_vae.safetensors
+        dest: vae
+        size_gb: 0.25
+    params: "20B (quantizado)"
+    pipeline_type: instruction_edit_multi_image
+    input_mode: image_plus_instruction
+    references_supported: 2
+    reference_limitation: >-
+      3 imagens no total (node Core). A principal ocupa image1, sobrando 2
+      slots. face.png fica de fora quando full_body e outfit sao usados.
+
+    requires_custom_node: ComfyUI-GGUF
+    custom_node_repo: https://github.com/city96/ComfyUI-GGUF
+    custom_node_ack_required: true
+    custom_node_note: >-
+      Mesma condicao do Q3_K_M: quantizacao de terceiro, carregada por custom
+      node. Exige aceite explicito.
+
+    parameters:
+      steps: 20
+      cfg: 2.5
+      sampler: euler
+      scheduler: simple
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+
+    download_gb: 20.7
+    download_estimated: false
+    download_note: >-
+      11.04 (GGUF) + 9.38 (text encoder) + 0.25 (VAE). Tamanhos lidos da
+      arvore de arquivos dos repos.
+    vram_gb: 13.0
+    ram_estimated: true
+    ram_note: >-
+      NAO medido por nos. Num GGUF o text encoder (9.38 GB) e o VAE ficam na
+      RAM do sistema: e dai que vem a economia de VRAM. 16 GB e o valor
+      conservador para caber encoder + processo do ComfyUI + kernel.
+      IMPORTANTE: o Colab T4 tem ~12.7 GB de RAM, abaixo disso. RAM
+      insuficiente com GGUF nao levanta erro — o processo entra em swap e a
+      sessao TRAVA em silencio, que foi o sintoma observado na celula 9.
+      [TEST REQUIRED] confirmar o consumo real de RAM antes de baixar o
+      valor exigido.
+    vram_estimated: true
+    vram_note: "Assume text encoder e VAE em RAM do sistema."
+    disk_gb: 28.0
+    ram_gb: 16.0
+
+    license: apache-2.0
+    license_source: "Qwen/Qwen-Image-Edit-2511 (modelo-base), Apache 2.0"
+    license_verified: true
+    quantization_license: apache-2.0
+    quantization_license_source: >-
+      Card do unsloth/Qwen-Image-Edit-2511-GGUF declara Apache 2.0, herdada
+      do modelo-base. Nao confirmamos revision nem hash dos arquivos.
+    quantization_license_verified: false
+    quantization_author: unsloth
+    third_party_quantization: true
+    commercial_status: pending_human_review
+    commercial_status_reason: >-
+      Igual ao Q3_K_M: base Apache 2.0, variante quantizada de terceiro sem
+      hash conferido.
+
+    status: CANDIDATE
+    try_first: false
+    notes: "Rodar apenas depois do Q3_K_M, em sessao separada."
+
+  # ------------------------------------------------------------------
+  wai_illustrious_sdxl_v170:
+    label: WAI-illustrious-SDXL (benchmark comparativo)
+    matrix_candidate: false
+    matrix_exclusion_reason: >
+      Nao entra na matriz de avaliacao de modelos de EDICAO
+      (notebooks/model_eval_*.ipynb). Aquela matriz compara modelos que
+      recebem imagem como referencia; este e um checkpoint SDXL de
+      geracao com img2img, avaliado no seu proprio benchmark
+      comparativo (notebooks/wai_illustrious_sdxl_eval.ipynb).
+      Misturar os dois faria a matriz comparar coisas diferentes.
+    repo: null
+    source: civitai
+    source_url: https://civitai.red/models/827184/wai-illustrious-sdxl
+    civitai_model_id: 827184
+    civitai_model_version_id: null
+    civitai_version_id_verified: false
+    revision: null
+    revision_verified: false
+    version_note: >
+      [BLOQUEIO REAL] O usuario pediu para identificar a versao NO CIVITAI e
+      registrar model_id, modelVersionId, arquivo e SHA256. civitai.red e
+      civitai.com estao FORA da allowlist de egress desta sandbox (handshake
+      TLS morre). Portanto modelVersionId, nome exato do arquivo e SHA256
+      NAO foram verificados e ficam null. Nao inventamos esses valores e nao
+      trocamos por outra versao do WAI por conta propria.
+      O `models.lock.yaml` ja continha uma entrada anterior apontando v17.0,
+      tambem nao verificada. A versao efetiva DEVE ser fixada por um humano
+      no Colab (que enxerga o Civitai) antes da primeira execucao.
+    base_model: Illustrious-XL (SDXL)
+    params: "~2.6B (UNet SDXL finetune)"
+    pipeline_type: sdxl_checkpoint_img2img_ipadapter
+    input_mode: img2img_latent_plus_ipadapter_embeds
+    references_supported: 3
+    reference_mechanism: ipadapter_encode_combine
+    reference_mechanism_note: >
+      CORRECAO (diretiva do usuario): "SDXL nao tem multi-referencia nativa"
+      NAO significa "SDXL nao consegue usar multiplas referencias". O
+      checkpoint nao tem mecanismo proprio como o ReferenceLatent do FLUX,
+      mas o IP-Adapter fornece multi-referencia real via CLIP-Vision:
+        full_body -> IPAdapterEncoder --+
+        face      -> IPAdapterEncoder --+-> IPAdapterCombineEmbeds
+        outfit    -> IPAdapterEncoder --+           |
+                                          IPAdapterEmbeds -> KSampler
+      Escolhemos Encoder+Combine em vez de empilhar IPAdapterAdvanced em
+      serie porque so essa rota permite declarar e auditar o peso de CADA
+      referencia separadamente.
+    reference_equivalence_note: >
+      [NAO AFIRMAR EQUIVALENCIA] FLUX faz multi-referencia pelo mecanismo
+      proprio (ReferenceLatent, no espaco latente); WAI faz por IP-Adapter
+      (embeddings CLIP-Vision injetados por cross-attention paralela). Sao
+      implementacoes DIFERENTES. A comparacao do benchmark e sobre o
+      RESULTADO VISUAL com as MESMAS referencias de entrada, nunca sobre
+      equivalencia de arquitetura.
+
+    # BLOQUEIO DECLARADO: multi-referencia exige custom node de terceiro.
+    requires_custom_node: ComfyUI_IPAdapter_plus
+    custom_node_repo: https://github.com/cubiq/ComfyUI_IPAdapter_plus
+    custom_node_ack_required: true
+    custom_node_note: >
+      A regra do projeto proibe instalar custom node arbitrariamente. Este
+      nao e arbitrario: e a implementacao de referencia do IP-Adapter em
+      ComfyUI (autor cubiq), exigida explicitamente pela diretiva. O
+      notebook pede aceite EXPLICITO antes de instalar e registra o commit
+      efetivamente usado. Se a instalacao falhar ou os nodes nao aparecerem
+      no /object_info, o benchmark PARA — a Run 003 nunca cai para uma
+      referencia em silencio.
+    custom_node_nodes:
+      - IPAdapterModelLoader
+      - IPAdapterEncoder
+      - IPAdapterCombineEmbeds
+      - IPAdapterEmbeds
+
+    # Pesos auxiliares do IP-Adapter (nao sao o checkpoint).
+    ipadapter_models:
+      adapter:
+        file: ip-adapter-plus_sdxl_vit-h.safetensors
+        repo: h94/IP-Adapter
+        repo_path: sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors
+        target_dir: models/ipadapter
+        license: apache-2.0
+        license_verified: true
+        license_source: https://huggingface.co/h94/IP-Adapter
+        sha256: null
+        sha256_note: >
+          Preenchido na execucao, a partir do arquivo realmente baixado.
+          Nao inventamos hash aqui.
+        choice_note: >
+          Variante "plus" usa patch embeddings e fica MAIS proxima da imagem
+          de referencia que a base — que e exatamente o eixo medido
+          (DESIGN_PRESERVATION). Pareado com encoder ViT-H conforme a tabela
+          oficial do cubiq; trocar o encoder por bigG aqui daria erro de
+          dimensao de tensor.
+      clip_vision:
+        file: CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors
+        repo: h94/IP-Adapter
+        repo_path: models/image_encoder/model.safetensors
+        target_dir: models/clip_vision
+        rename_required: true
+        rename_note: >
+          O arquivo chama-se model.safetensors no repo; o IP-Adapter exige o
+          nome canonico acima. Renomear faz parte da instalacao.
+        license: apache-2.0
+        license_verified: true
+        sha256: null
+
+    reference_roles:
+      full_body:
+        weight: 1.0
+        role: composicao, silhueta e proporcao gerais
+      face:
+        weight: 0.6
+        role: identidade facial
+      outfit:
+        weight: 0.8
+        role: roupa, capa e ornamentos dourados
+    reference_weights_status: BASELINE_EXPERIMENTAL
+    reference_weights_note: >
+      Valores iniciais dados pela diretiva (full_body 1.0 / face 0.6 /
+      outfit 0.8). NAO sao valores validados nem otimizados: sao hipotese
+      inicial. Sem sweep nesta rodada — uma unica configuracao baseline,
+      com os tres pesos registrados individualmente no recipe. A calibracao
+      fica para uma rodada especifica.
+    combine_method: concat
+    combine_method_status: BASELINE_EXPERIMENTAL
+    combine_method_note: >
+      "concat" preserva os tokens de cada referencia em vez de media-los,
+      entao roupa e rosto nao se dissolvem um no outro. Alternativas do node
+      (add, subtract, average, norm average, max, min) nao foram testadas
+      nesta rodada.
+
+    parameters:
+      steps: 20
+      cfg: 6.0
+      sampler: euler_ancestral
+      sampler_note: >
+        "Euler a" do A1111 = `euler_ancestral` no ComfyUI.
+      scheduler: normal
+      scheduler_note: >
+        O autor nao declara scheduler. "normal" e o padrao do ComfyUI para
+        SDXL. Registrado por ser escolha nossa, nao do autor.
+      denoise: 0.50
+      denoise_status: BASELINE_EXPERIMENTAL
+      denoise_note: >
+        CORRECAO desta rodada: era 1.0. Com denoise 1.0 o latente inicial e
+        destruido e o processo vira txt2img na pratica — a personagem
+        original deixaria de guiar o resultado. O benchmark e
+        PERSONAGEM -> WAI -> CHIBI, entao denoise TEM de ser < 1.0.
+        0.50 e ponto de partida, NAO valor otimizado e NAO validado:
+        mais baixo preserva a arte original mas resiste a virar chibi;
+        mais alto vira chibi mas perde identidade. Sem sweep nesta rodada.
+        Configuravel no notebook.
+      resolution: from_source_image
+      resolution_note: >
+        CORRECAO desta rodada: era 1024x1344 fixo. Em img2img a resolucao
+        de saida e a da IMAGEM DE PARTIDA, nao um parametro livre.
+        `full_body.png` e 1024x1024 (quadrado). Forcar 1024x1344 exigiria
+        redimensionar a arte original de aspect 1.0 para 0.76, ou seja,
+        DEFORMAR a personagem — proibido por instrucao. Por isso o grafo
+        NAO tem node de resize e a saida herda 1024x1024.
+        Efeito colateral positivo: volta a bater com o formato do FLUX
+        (1024x1024), o que fortalece a comparacao.
+        1024x1024 e resolucao nativa valida de SDXL. O autor cita 1024x1344
+        como exemplo para txt2img, onde a proporcao e escolha livre.
+      batch: 1
+      seed: 42
+      hires_fix: false
+      hires_note: >
+        Recomendado pelo autor (1.5x / 20 steps / R-ESRGAN 4x+ Anime6B /
+        denoise 0.35-0.5), mas NAO usado nesta rodada por instrucao.
+      parameters_source: >
+        steps 20 e CFG 6.0 sao o meio das faixas do autor do v17.0
+        (15-30 e 5-7), com Euler a. denoise e resolucao NAO vem do autor:
+        decorrem do pipeline img2img deste benchmark.
+
+    workflows:
+      run_001: experimental/wai_illustrious_ipadapter@v0
+      run_002: experimental/wai_illustrious_ipadapter@v0
+      run_003: experimental/wai_illustrious_ipadapter@v2
+    workflows_note: >
+      CORRECAO desta rodada: as tres runs sao IMG2IMG REAL. O latente
+      inicial vem de full_body.png (LoadImage -> VAEEncode -> KSampler) em
+      TODAS elas. A referencia nunca e descartada: ela e a imagem de
+      partida (primary_image_role: source_image).
+      v0 = Runs 001/002: img2img puro, sem IP-Adapter. So a imagem original
+      guia o resultado.
+      v2 = Run 003: o mesmo img2img MAIS multi-referencia via IP-Adapter.
+      Nele full_body.png tem DOIS papeis (latente inicial e referencia do
+      IP-Adapter), registrado como dual_role no recipe.
+      A comparacao 001 x 003 isola exatamente o efeito do IP-Adapter:
+      tudo o mais e identico.
+      O v1 (1 referencia via IP-Adapter, sem img2img) fica preservado no
+      repositorio, sem uso nesta rodada.
+
+    prompt_mode: generic_chibi_base
+    prompt_type: generic_chibi_base
+    character_specific_prompt: false
+    prompt_override: >-
+      1girl, solo, full body, chibi, super deformed, large head, small body,
+      short limbs, cute stylized anime character, simple cel shading, anime
+      coloring, standing, simple background, masterpiece, best quality,
+      amazing quality
+    prompt_override_reason: >
+      CORRECAO: o prompt anterior descrevia a waifu_001 em texto ("black
+      hair, red eyes, horns, long black cape, golden ornaments"). Isso o
+      tornava inutilizavel para qualquer outra personagem — cada waifu nova
+      exigiria reescrever o prompt a mao, e o benchmark deixaria de produzir
+      uma recipe reutilizavel.
+      Separacao de responsabilidades da pipeline:
+        imagem de entrada + referencias -> identidade e design especificos
+        prompt                          -> transformacao estetica p/ chibi
+        IP-Adapter                      -> reforco visual da identidade
+        denoise                         -> quanto da estrutura pode mudar
+      O prompt nao deve tentar reconstruir a personagem em texto: essa
+      informacao ja esta no latente inicial (img2img) e nas referencias.
+      Este prompt-base descreve APENAS o alvo estetico (proporcao chibi,
+      lineart limpo, cel shading) e vale para waifu_001, waifu_002 e
+      qualquer personagem futura, sem edicao manual.
+      As quality tags do fim sao as declaradas pelo autor do checkpoint,
+      nao embelezamento nosso.
+    negative_prompt_override: >-
+      bad quality, worst quality, worst detail, sketch, watermark,
+      signature, logo, text, multiple views, grid, multiple characters,
+      realistic, photorealistic, 3d, semi-realistic, long limbs, tall body,
+      explicit
+    negative_prompt_reason: >
+      Tags de qualidade do autor, mais quatro grupos genericos:
+      (1) watermark/signature/logo/text — modos de falha comuns quando a
+          imagem de partida e uma splash art;
+      (2) multiple views/grid/multiple characters — evita character sheet e
+          mais de uma figura no quadro, coerente com "solo" no positivo;
+      (3) realistic/photorealistic/3d/semi-realistic — afasta do
+          fotorrealismo e reforca o alvo 2D anime;
+      (4) long limbs/tall body — reforco NEGATIVO da proporcao chibi, par
+          direto de "short limbs, small body" no positivo. Util porque o
+          img2img parte de uma personagem de proporcao adulta e tende a
+          conserva-la.
+      Nenhum termo descreve uma personagem especifica: todos continuam
+      genericos e reutilizaveis.
+      "explicit" e uma tag de rating do dominio Danbooru, usada aqui para
+      empurrar a saida para conteudo nao explicito. Nao e modificacao de
+      filtro do modelo: e condicionamento normal por prompt negativo.
+
+    prompt_generic_note: >
+      Termos proibidos neste prompt-base: cor de cabelo, cor de olhos,
+      chifres, roupa, capa, acessorios, nome de personagem, cores
+      especificas. Ha teste automatico (test_wai_benchmark.py) que falha se
+      algum reaparecer. "1girl" e "solo" sao tags de composicao do dominio
+      Danbooru (quantidade de figuras no quadro), nao descricao de design.
+
+    download_gb: 10.5
+    download_estimated: true
+    vram_gb: 12.0
+    vram_estimated: true
+    vram_note: >
+      SDXL fp16 ~8-10 GB, mais IP-Adapter (~1 GB) e CLIP-Vision ViT-H
+      (~2.5 GB, roda no encode). Estimativa ~12 GB, ainda dentro da T4 de
+      15 GB, mas com folga menor que a rota img2img. Nao medido por nos: o
+      preflight do notebook mede de verdade e emite BLOCKED se nao couber.
+    disk_gb: 12.0
+    ram_gb: 12.0
+    license: faipl-1.0-sd
+    license_name: Fair AI Public License 1.0-SD
+    license_link: https://freedevproject.org/faipl-1.0-sd/
+    license_source: >
+      Herdada do Illustrious-XL. NAO lida em fonte primaria: o Civitai esta
+      bloqueado nesta sandbox. Corroborada por model cards espelho no
+      HuggingFace (John6666/wai-nsfw-illustrious-*) que declaram
+      license_name: faipl-1.0-sd.
+    license_verified: false
+    license_conflict_note: >
+      O usuario observou "Commercial use allowed" na interface do Civitai.
+      Isso e registrado como evidencia, mas NAO substitui o texto da licenca:
+      os botoes do Civitai sao metadados preenchidos pelo autor e ja
+      divergiram do LICENSE em outros modelos. A FAIPL diz que o output nao e
+      coberto, mas tambem fala em proibir monetizacao proprietaria
+      closed-source; a OnomaAI reconheceu a ambiguidade publicamente.
+      Registrar os dois lados sem reinterpretar.
+    commercial_status: pending_human_review
+    commercial_banner: "Benchmark comparativo — licenca pendente de revisao humana"
+    excluded_from_commercial_ranking: false
+    status: MODEL_MISSING
+    notes: >
+      [HUMAN REVIEW REQUIRED] Nome original do projeto e
+      "WAI-NSFW-illustrious-SDXL", com foco declarado em conteudo adulto. Nao
+      adicionamos nenhuma tag NSFW aos prompts; registramos porque afeta o
+      comportamento do modelo. Benchmark comparativo apenas: NAO e pipeline
+      oficial e NAO substitui o baseline FLUX.
+
+  waifu_inpaint_xl:
+    label: Waifu-Inpaint-XL (correcao localizada de figurino)
+    display_name: Waifu-Inpaint-XL
+    task: sdxl_inpainting_9ch
+    pipeline_type: sdxl_inpaint_9ch
+    status: MODEL_MISSING
+    repo: ShinoharaHare/Waifu-Inpaint-XL
+    disk_gb: 7.0
+    vram_gb: 10.0
+    vram_estimated: true
+    vram_note: >-
+      [TEST REQUIRED] Estimativa por analogia com SDXL inpaint fp16 a 1024px.
+      Nao medido: o peso ainda nao foi obtido (repo gated).
+    commercial_status: pending_human_review
+    matrix_candidate: false
+    matrix_exclusion_reason: >-
+      Nao entra na matriz de avaliacao de modelos de EDICAO
+      (notebooks/model_eval_*.ipynb). Aquela matriz compara modelos que
+      recebem uma imagem e a reinterpretam inteira; este corrige apenas a
+      regiao mascarada de uma imagem ja gerada, e e avaliado no seu proprio
+      laboratorio (notebooks/waifu_inpaint_xl_lab.ipynb).
+    purpose: >-
+      Corrigir/redesenhar SOMENTE a regiao da roupa de uma personagem ja
+      transformada em chibi, preservando rosto, cabelo, pele, pose e
+      composicao. NAO substitui o wai_illustrious_sdxl_v170, que continua
+      gerando o chibi de entrada.
+    source:
+      type: huggingface
+      repo: ShinoharaHare/Waifu-Inpaint-XL
+      url: https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL
+      file: Waifu-Inpaint-XL.safetensors
+      size_bytes_declared: 6940000000
+      size_note: 6.94 GB declarado na listagem do repo; conferir apos baixar.
+      revision: unknown
+      sha256: unknown
+      gated: true
+      gated_note: >-
+        [BLOQUEIO] Repositorio GATED: "You need to agree to share your contact
+        information to access this model". A listagem de arquivos e publica,
+        mas o download exige aceite manual + token HF. NAO e possivel obter o
+        peso nem o SHA256 automaticamente. O aceite tem de ser feito por uma
+        pessoa, na conta dela.
+    lineage:
+      base_model: KBlueLeaf/kohaku-xl-beta5
+      chain:
+        - OnomaAIResearch/Illustrious-xl-early-release-v0
+        - ShinoharaHare/WAI-NSFW-illustrious-SDXL-V14.0-V-Prediction
+        - ShinoharaHare/Waifu-Inpaint-XL
+      note: >-
+        Derivado do WAI V14.0 V-PREDICTION, nao do v17.0 EPS que usamos. Sao
+        checkpoints diferentes, com parametrizacao de sampling diferente.
+    architecture:
+      unet_in_channels: 9
+      channels_note: >-
+        4 canais latentes + 1 de mascara + 4 de latente mascarado. Exige
+        InpaintModelConditioning; CheckpointLoaderSimple sozinho nao alimenta
+        os canais extras.
+      prediction_type: v_prediction
+      prediction_note: >-
+        [TEST REQUIRED] Herdado do V14.0-V-Prediction. Se o ComfyUI nao
+        autodetectar, ModelSamplingDiscrete com sampling=v_prediction e
+        obrigatorio; com eps o output sai queimado.
+      zsnr: unknown
+      zsnr_note: >-
+        Nem todo modelo v-pred usa zsnr, e aplica-lo indevidamente queima a
+        imagem. Nao ha declaracao no model card. Testar separadamente.
+    license:
+      name: CreativeML Open RAIL++-M
+      declared_by: model card
+      commercial_status: pending_human_review
+      commercial_note: >-
+        RAIL++-M permite uso comercial mas impoe restricoes de uso. A cadeia
+        inclui Illustrious e WAI, cujos termos ja estao em revisao no repo.
+        Herdar licenca por cadeia nao e automatico.
+      nsfw_lineage_note: >-
+        O modelo-pai e marcado Not-For-All-Audiences no HF. Nosso uso e
+        vestuario; registrado por transparencia de procedencia.
+    author_recommendation:
+      steps: 28
+      cfg: 5.0
+      pipeline: StableDiffusionXLInpaintPipeline
+      source: model card (exemplo oficial diffusers)
+    third_party_observation:
+      claim: >-
+        Relato em r/comfyui (2026): "it changes the color of the whole image
+        slightly". Fonte secundaria, nao verificada.
+      relevance: >-
+        Se procede, e exatamente o risco desta fase. E o motivo de
+        outside_mask_changed_percentage ser a metrica principal.
+      status: provisional_observation
+
+  pony_diffusion_v6_xl:
+    label: "Pony Diffusion V6 XL (research only)"
+    repo: LyliaEngine/Pony_Diffusion_V6_XL
+    revision: null
+    revision_verified: false
+    base_model: stabilityai/stable-diffusion-xl-base-1.0
+    params: "~2.6B (UNet SDXL finetune)"
+
+    # SDXL nao e editor por instrucao. Sem ControlNet/IP-Adapter (ambos fora
+    # de escopo por instrucao), o unico modo com imagem e img2img latente.
+    pipeline_type: sdxl_checkpoint_img2img
+    input_mode: img2img_latent
+    references_supported: 0
+    reference_limitation: >-
+      Checkpoint SDXL: nao aceita referencia de imagem sem IP-Adapter ou
+      ControlNet, ambos fora de escopo por instrucao. Unico modo disponivel e
+      img2img latente. Nao preserva design por referencia.
+
+    parameters:
+      steps: 25
+      cfg: 7.0
+      sampler: euler_ancestral
+      scheduler: normal
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      resolution: [1024, 1024]
+      batch: 1
+
+    # Pony exige as score tags; sem elas a saida degrada. Isso e exigencia
+    # documentada do proprio modelo, entao entra como override registrado.
+    prompt_override_prefix: "score_9, score_8_up, score_7_up, score_6_up, "
+    prompt_override_reason: >-
+      As score tags sao exigencia documentada do Pony V6; sem elas a saida
+      degrada. Override registrado, nao invencao artistica.
+
+    download_gb: 7.0
+    download_estimated: true
+    vram_gb: 10.0
+    vram_estimated: true
+    disk_gb: 12.0
+    ram_gb: 12.0
+
+    license: faipl-1.0-sd-modified
+    license_name: "Fair AI Public License 1.0-SD (modificada)"
+    license_link: https://freedevproject.org/faipl-1.0-sd/
+    license_source: >-
+      Card do modelo e pagina do autor: "You are not permitted to run
+      inference of this model on websites or applications allowing any form
+      of monetization (paid inference, faster tiers, etc.). This applies to
+      any derivative models or model merges." Permissao comercial explicita
+      concedida apenas a CivitAI e Hugging Face; demais casos exigem contato
+      com contact@purplesmart.ai.
+    license_verified: true
+    license_conflict_note: >-
+      Ha fontes de terceiros afirmando "CreativeML OpenRAIL-M" e
+      "cdla-permissive-2.0" para este modelo. Divergem do texto de licenca do
+      proprio autor. Prevalece o texto do autor; a divergencia fica
+      registrada sem reinterpretacao.
+
+    commercial_status: research_only
+    commercial_banner: "Research only — not approved for commercial production"
+    excluded_from_commercial_ranking: true
+    commercial_status_reason: >-
+      A restricao do autor incide sobre INFERENCIA monetizada, nao apenas
+      sobre redistribuicao do checkpoint. Avaliacao tecnica e permitida;
+      entrar no pipeline comercial nao e. Um resultado do Pony nunca altera o
+      candidato comercial vencedor.
+
+    status: RESEARCH_ONLY
+    notes: >-
+      Aparece no dropdown de proposito — o usuario quer poder testar
+      tecnicamente. Nunca marcado como aprovado.

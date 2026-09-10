@@ -1,0 +1,55 @@
+# Ambiente: cloud
+# Backend ComfyUI remoto para inferencia pesada (Qwen-Image-Edit, ControlNet).
+#
+# Credenciais NUNCA neste arquivo. Usar variaveis de ambiente:
+#   CHIBI_COMFY_URL, CHIBI_COMFY_TOKEN
+
+schema_version: 1
+
+name: cloud
+kind: remote_gpu
+
+comfyui:
+  enabled: true
+  base_url_env: CHIBI_COMFY_URL
+  token_env: CHIBI_COMFY_TOKEN
+  base_url: null           # resolvido em runtime a partir da env var
+  timeout_seconds: 900
+  poll_interval_seconds: 2
+
+  # Nomes dos arquivos de modelo COMO O SERVIDOR OS ENXERGA (dentro de
+  # ComfyUI/models/unet, /clip, /vae). NAO sao caminhos desta maquina.
+  # [TEST REQUIRED] nomes nao confirmados contra um servidor real.
+  # CORRIGIDO 2026-09-08: o nome anterior (qwen_image_edit_2511_fp8_e4m3fn)
+  # NAO EXISTE. Conferido no repo oficial Comfy-Org/Qwen-Image-Edit_ComfyUI
+  # (sha 984166f6). Existe fp8_e4m3fn para 2509 e para o Qwen-Image-Edit
+  # original, mas para o 2511 as variantes sao bf16 / fp8mixed / int8_convrot.
+  models:
+    unet: qwen_image_edit_2511_fp8mixed.safetensors
+    clip: qwen_2.5_vl_7b_fp8_scaled.safetensors
+    vae: qwen_image_vae.safetensors
+    # UNETLoader.weight_dtype e o dtype de CARGA, nao o nome do arquivo.
+    # O arquivo ja vem quantizado; "default" respeita os pesos como estao.
+    weight_dtype: default
+
+capabilities:
+  gpu_inference: true
+  cpu_tools: false
+  rigging: false
+  godot: false
+
+requirements:
+  # 24 GB e o TARGET INICIAL de infraestrutura, nao uma garantia universal de
+  # execucao. E o que acomoda o dtype fp8 escolhido acima (~20.5 GB) com folga
+  # para VAE e ativacoes. Trocar o dtype muda este numero:
+  #   BF16 ~40.9 GB | fp8 ~20.5 GB | Q4_K_M ~13.2 GB | Q4_0 ~11.9 GB
+  # Ajuste este valor junto com comfyui.models.weight_dtype — o preflight le
+  # daqui, nao ha 24 hardcoded no codigo.
+  # [TEST REQUIRED] limiar nao confrontado com execucao real.
+  min_vram_gb: 24
+  suggested_gpu: ["L4", "L40S", "A10", "RTX 4090", "A6000"]
+
+cost:
+  # [TEST REQUIRED] medir custo real por personagem no MVP
+  estimated_usd_per_hour: 0.60
+  estimated_usd_per_character: null

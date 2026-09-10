@@ -1,0 +1,29 @@
+# Git LFS — binarios grandes de arte.
+#
+# ATENCAO: git-lfs NAO esta instalado neste ambiente no momento da Fase 1.
+# Estas regras so tem efeito depois de `git lfs install` na maquina de quem
+# clona. Antes de commitar a primeira arte pesada, rode:
+#
+#     git lfs install
+#     git lfs track   # confirma as regras abaixo
+#
+# Modelos (.safetensors etc) NAO estao aqui de proposito: eles sao ignorados
+# em .gitignore e registrados por hash em config/models.lock.yaml.
+
+#*.png   filter=lfs diff=lfs merge=lfs -text
+*.jpg   filter=lfs diff=lfs merge=lfs -text
+*.jpeg  filter=lfs diff=lfs merge=lfs -text
+*.webp  filter=lfs diff=lfs merge=lfs -text
+*.psd   filter=lfs diff=lfs merge=lfs -text
+*.tga   filter=lfs diff=lfs merge=lfs -text
+
+# Texto: normalizar fim de linha, manter diff legivel.
+*.md      text eol=lf
+*.py      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.json    text eol=lf
+*.tres    text eol=lf
+*.tscn    text eol=lf
+*.gd      text eol=lf
+chibi     text eol=lf

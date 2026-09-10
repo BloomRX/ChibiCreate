@@ -1,0 +1,213 @@
+{
+  "_comment": [
+    "FASE 3B - EXPERIMENTO FLUX -> QWEN. Qwen-Image-Edit-2511 como REFINER.",
+    "Derivado de qwen_edit_minimal/v1. NAO substitui aquele workflow.",
+    "NAO e o Flow 02 e NAO produz Chibi Master.",
+    "",
+    "Formato: API do ComfyUI (POST /prompt). Placeholders %%NOME%% pela CLI.",
+    "",
+    "MULTI-REFERENCIA: TextEncodeQwenImageEditPlus e node CORE e aceita",
+    "image1, image2 e image3 (LIMITE DO NODE = 3 imagens). Nenhum custom node.",
+    "",
+    "Papel de cada slot neste experimento:",
+    "  image1 = IMAGEM PRINCIPAL a ser editada (chibi vindo do FLUX, ou o",
+    "           full_body original no TESTE A).",
+    "  image2 = referencia de design 1 (full_body original ou face).",
+    "  image3 = referencia de design 2 (outfit).",
+    "",
+    "IMPORTANTE - image1 tambem alimenta o LATENTE inicial via VAEEncode: e a",
+    "imagem que sera de fato redesenhada. image2/image3 entram SO como",
+    "condicionamento de referencia. Trocar a ordem muda o experimento.",
+    "",
+    "LIMITE ESTRUTURAL DO TESTE C: com a saida do FLUX ocupando image1, sobram",
+    "2 slots para 3 referencias (full_body + face + outfit). O node Core nao",
+    "comporta as quatro imagens. Ver o relatorio: isso e uma restricao real,",
+    "nao uma escolha de design. Passar --ref alem do limite deve ERRAR.",
+    "",
+    "Negativo: Qwen usa prompt negativo real (segundo TextEncode, sem imagem).",
+    "",
+    "[TEST REQUIRED] Nunca executado. Validar com 'chibi comfy validate'",
+    "contra /object_info antes da primeira execucao real."
+  ],
+  "1": {
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Qwen-Image-Edit-2511 (diffusion model)"
+    },
+    "inputs": {
+      "unet_name": "%%UNET_NAME%%",
+      "weight_dtype": "%%WEIGHT_DTYPE%%"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Text encoder (Qwen2.5-VL)"
+    },
+    "inputs": {
+      "clip_name": "%%CLIP_NAME%%",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE"
+    },
+    "inputs": {
+      "vae_name": "%%VAE_NAME%%"
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Imagem principal a editar (saida do FLUX ou original)"
+    },
+    "inputs": {
+      "image": "%%INPUT_IMAGE%%",
+      "upload": "image"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Prompt positivo + referencia"
+    },
+    "inputs": {
+      "prompt": "%%PROMPT%%",
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "image1": [
+        "4",
+        0
+      ],
+      "image2": [
+        "11",
+        0
+      ],
+      "image3": [
+        "12",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Prompt negativo"
+    },
+    "inputs": {
+      "prompt": "%%NEGATIVE_PROMPT%%",
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sampler (denoise < 1.0 preserva a base)"
+    },
+    "inputs": {
+      "seed": "%%SEED%%",
+      "steps": "%%STEPS%%",
+      "cfg": "%%CFG%%",
+      "sampler_name": "%%SAMPLER%%",
+      "scheduler": "%%SCHEDULER%%",
+      "denoise": "%%DENOISE%%",
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "13",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode"
+    },
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "10": {
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Output"
+    },
+    "inputs": {
+      "images": [
+        "9",
+        0
+      ],
+      "filename_prefix": "%%OUTPUT_PREFIX%%"
+    }
+  },
+  "11": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Referencia de design 2"
+    },
+    "inputs": {
+      "image": "%%INPUT_IMAGE_2%%",
+      "upload": "image"
+    }
+  },
+  "12": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Referencia de design 3"
+    },
+    "inputs": {
+      "image": "%%INPUT_IMAGE_3%%",
+      "upload": "image"
+    }
+  },
+  "13": {
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "Latente inicial <- imagem principal"
+    },
+    "inputs": {
+      "pixels": [
+        "4",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  }
+}

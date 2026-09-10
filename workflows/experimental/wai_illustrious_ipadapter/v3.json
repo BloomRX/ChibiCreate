@@ -1,0 +1,194 @@
+{
+  "_comment": "WAI CHIBI EXPERIMENT LAB. IMG2IMG REAL: o latente inicial vem SEMPRE de full_body.png via LoadImage -> VAEEncode -> KSampler. NUNCA usar EmptyLatentImage aqui: isso viraria txt2img e descartaria a personagem original. O mecanismo de referencia atua ADICIONALMENTE sobre o MODEL, nao sobre o latente. Resolucao herdada da imagem-fonte (sem resize: redimensionar deformaria a arte). VAE integrado ao checkpoint (saida 2). || v3 = MODO 1 REF. full_body.png tem DOIS PAPEIS: (1) imagem inicial do img2img (VAEEncode); (2) unica referencia do IP-Adapter (Encoder). Intencional, registrado como dual_role. Sem CombineEmbeds: com uma referencia so, o Encoder alimenta o IPAdapterEmbeds direto (pos na saida 0, neg na saida 1).",
+  "_pipeline": "img2img",
+  "_reference_count": 1,
+  "_primary_image_role": "source_image",
+  "_mode": "1_REF_FULL_BODY",
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "WAI-illustrious-SDXL v17.0 (VAE integrado)"
+    },
+    "inputs": {
+      "ckpt_name": "%%CKPT_NAME%%"
+    }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positivo (preset generico)"
+    },
+    "inputs": {
+      "text": "%%PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negativo"
+    },
+    "inputs": {
+      "text": "%%NEGATIVE_PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "full_body.png - IMAGEM DE PARTIDA do img2img"
+    },
+    "inputs": {
+      "image": "%%REF_FULL_BODY%%"
+    }
+  },
+  "5": {
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "full_body -> latente inicial"
+    },
+    "inputs": {
+      "pixels": [
+        "4",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "41": {
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode"
+    },
+    "inputs": {
+      "samples": [
+        "40",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "42": {
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Output"
+    },
+    "inputs": {
+      "images": [
+        "41",
+        0
+      ],
+      "filename_prefix": "%%OUTPUT_PREFIX%%"
+    }
+  },
+  "10": {
+    "class_type": "IPAdapterModelLoader",
+    "_meta": {
+      "title": "IP-Adapter SDXL (arquivo pinado)"
+    },
+    "inputs": {
+      "ipadapter_file": "%%IPADAPTER_FILE%%"
+    }
+  },
+  "11": {
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "CLIP Vision ViT-H"
+    },
+    "inputs": {
+      "clip_name": "%%CLIP_VISION_FILE%%"
+    }
+  },
+  "12": {
+    "class_type": "IPAdapterEncoder",
+    "_meta": {
+      "title": "Encode full_body (peso %%WEIGHT_FULL_BODY%%)"
+    },
+    "inputs": {
+      "ipadapter": [
+        "10",
+        0
+      ],
+      "image": [
+        "4",
+        0
+      ],
+      "weight": "%%WEIGHT_FULL_BODY%%",
+      "clip_vision": [
+        "11",
+        0
+      ]
+    }
+  },
+  "20": {
+    "class_type": "IPAdapterEmbeds",
+    "_meta": {
+      "title": "Aplicar embeds ao MODEL (nao ao latente)"
+    },
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "ipadapter": [
+        "10",
+        0
+      ],
+      "pos_embed": [
+        "12",
+        0
+      ],
+      "neg_embed": [
+        "12",
+        1
+      ],
+      "weight": "%%IPADAPTER_WEIGHT%%",
+      "weight_type": "%%WEIGHT_TYPE%%",
+      "start_at": "%%START_AT%%",
+      "end_at": "%%END_AT%%",
+      "embeds_scaling": "%%EMBEDS_SCALING%%"
+    }
+  },
+  "40": {
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "img2img + 1 ref (denoise < 1.0)"
+    },
+    "inputs": {
+      "seed": "%%SEED%%",
+      "steps": "%%STEPS%%",
+      "cfg": "%%CFG%%",
+      "sampler_name": "%%SAMPLER%%",
+      "scheduler": "%%SCHEDULER%%",
+      "denoise": "%%DENOISE%%",
+      "model": [
+        "20",
+        0
+      ],
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
+    }
+  }
+}

@@ -1,0 +1,62 @@
+# Ambiente: colab_flux2
+#
+# Avaliacao de modelo (FASE 3B = MODEL EVALUATION) — candidato FLUX.2 klein 4B.
+# EXPERIMENTAL e TEMPORARIO: Colab nao e infraestrutura do projeto.
+#
+# Credenciais NUNCA neste arquivo. Usar variaveis de ambiente:
+#   CHIBI_COMFY_URL, CHIBI_COMFY_TOKEN
+
+schema_version: 1
+
+name: colab_flux2
+kind: remote_gpu
+
+comfyui:
+  enabled: true
+  base_url_env: CHIBI_COMFY_URL
+  token_env: CHIBI_COMFY_TOKEN
+  base_url: null           # resolvido em runtime a partir da env var
+  timeout_seconds: 900
+  poll_interval_seconds: 2
+
+  # Nomes COMO O SERVIDOR OS ENXERGA. Verificados contra o repo oficial
+  # Comfy-Org/vae-text-encorder-for-flux-klein-4b (sha 5f526678) em 2026-09-08.
+  #
+  # ATENCAO: usar `flux-2-klein-4b`, NAO `flux-2-klein-base-4b`. O "base" e o
+  # modelo nao-destilado; o distilled e o que roda em 4 passos.
+  models:
+    unet: flux-2-klein-4b.safetensors
+    clip: qwen_3_4b.safetensors          # text encoder do FLUX.2 e um Qwen3-4B
+    vae: flux2-vae.safetensors
+    # O arquivo ja vem em bf16; "default" respeita os pesos como estao.
+    weight_dtype: default
+    # Alternativa fp4 (3.85 GB em vez de 8.04 GB) para GPU apertada:
+    #   clip: qwen_3_4b_fp4_flux2.safetensors
+    # [TEST REQUIRED] variante fp4 nao testada.
+
+# Parametros do modelo DESTILADO. Diferentes do Qwen — nao copiar entre si.
+sampling:
+  # FLUX usa guidance embutida, nao CFG. cfg != 1.0 lava a imagem.
+  cfg: 1.0
+  steps: 4
+  sampler: euler
+  scheduler: simple
+  denoise: 1.0
+
+capabilities:
+  gpu_inference: true
+  cpu_tools: false
+  rigging: false
+  godot: false
+
+requirements:
+  # Model card oficial: "~13GB VRAM". Comfy.org cita ~8 GB para o 4B.
+  # Adotamos 14 como alvo conservador: cabe numa T4 de 15 GB utilizaveis —
+  # ao contrario do Qwen (20.5 GB so de pesos).
+  # [TEST REQUIRED] nao confirmado por execucao real.
+  min_vram_gb: 14
+  suggested_gpu: ["T4", "L4", "RTX 3090", "RTX 4070", "A10"]
+
+cost:
+  estimated_usd_per_hour: 0.0    # Colab: sem custo direto observavel
+  estimated_usd_per_character: null
