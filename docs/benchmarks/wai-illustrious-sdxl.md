@@ -173,6 +173,28 @@ O ZIP anterior também saiu apenas com `run_001`, sem aviso. A célula 13
 agora compara com `{run_001, run_002, run_003}`, imprime `ZIP INCOMPLETO`
 e marca o relatório como `PACOTE PARCIAL` quando faltar alguma.
 
+### Bug corrigido: os nodes do IP-Adapter "sumiam" na Run 003
+
+A célula 7 reportava os quatro nodes do IP-Adapter como ausentes mesmo com
+o custom node instalado. A causa não era o IP-Adapter:
+
+O servidor sobe com `Popen(["python", "main.py", ...])` e `cwd=/content/ComfyUI`,
+então a linha de comando real é `python main.py --listen ...` — que **não
+contém** a string `ComfyUI/main.py`. O `pkill -f "ComfyUI/main.py"` da
+célula 7 não casava com nada, o servidor antigo continuava vivo e
+`subir_comfy()` imprimia "ja estava no ar; reaproveitando".
+
+Como **o ComfyUI lê `custom_nodes` uma única vez, no boot**, esse servidor
+— que subiu na célula 5, *antes* do `git clone` da célula 6 — nunca teve os
+nodes. Falha silenciosa: nada errava, os nodes só não existiam.
+
+Correção: `matar_comfy()` derruba por padrão de comando correto, escala
+para `SIGKILL` e, em último caso, mata por porta (`fuser -k 8188/tcp`);
+tolera `PROC` inexistente após restart de kernel; e falha alto se não
+conseguir. A célula 7 agora chama `subir_comfy(force=True)` na Run 003, e
+em caso de falha imprime diagnóstico (custom node no disco, pesos baixados,
+linhas de erro de import do log) em vez de só bloquear.
+
 ### Limitação registrada
 
 O prompt do WAI deixou de ser idêntico ao do FLUX (que usa `base_prompt`,

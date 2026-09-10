@@ -860,16 +860,29 @@ def test_erro_claro_se_a_pasta_nao_for_um_clone():
     assert "BLOCKED — {COMFY} nao e um clone do ComfyUI" in src
 
 
-def test_subir_comfy_reaproveita_servidor_ja_no_ar():
-    src = _nb_source()
-    assert "ja estava no ar; reaproveitando." in src
+def test_subir_comfy_reaproveita_servidor_so_quando_pode():
+    """Reaproveitar e valido no baseline, invalido apos instalar node."""
+    cel5 = _celula_de_codigo("#@title 5.")
+    assert "ja estava no ar; reaproveitando." in cel5
+    # o reaproveitamento fica no ramo SEM force
+    reaproveita = cel5.split("elif comfy_no_ar():", 1)[1]
+    assert "reaproveitando" in reaproveita.split("def ")[0]
 
 
-def test_reinicio_tolera_proc_none():
-    """PROC e None quando o servidor ja estava no ar."""
-    src = _nb_source()
-    assert "if PROC is not None:" in src
-    assert 'subprocess.run(["pkill", "-f", "ComfyUI/main.py"], check=False)' in src
+def test_matar_comfy_nao_depende_de_ter_o_objeto_popen():
+    """O processo pode ter sobrevivido a um restart de kernel.
+
+    Nesse caso PROC nem existe no namespace, entao derrubar so via
+    PROC.terminate() nao basta: e preciso matar por padrao de comando
+    e por porta tambem.
+    """
+    cel5 = _celula_de_codigo("#@title 5.")
+    corpo = cel5.split("def matar_comfy", 1)[1].split("\ndef ", 1)[0]
+    assert "except NameError:" in corpo, "PROC pode nao existir"
+    assert "pkill" in corpo
+    assert "8188/tcp" in corpo, "matar por porta e o ultimo recurso"
+    assert "-9" in corpo, "escalada para SIGKILL"
+    assert "BLOCKED" in corpo, "falhar alto se nao conseguir derrubar"
 
 
 def test_celula_5_confere_o_checkpoint_do_drive():
@@ -1031,3 +1044,57 @@ def test_relatorio_documenta_ipadapter_da_run_003():
         assert campo in src, campo
     # custom nodes vem de todas as runs, nao so da primeira
     assert "for rec in recipes.values()" in src
+
+
+# ----------------------------------------------------------------------
+# Ciclo de vida do servidor ComfyUI
+# ----------------------------------------------------------------------
+
+def test_pkill_casa_com_a_linha_de_comando_realmente_usada():
+    """Regressao real: a Run 003 achou que o IP-Adapter nao existia.
+
+    A celula 5 sobe o servidor com Popen(["python", "main.py", ...]) e
+    cwd=/content/ComfyUI, entao a linha de comando e literalmente
+    "python main.py --listen ...". O pkill antigo procurava
+    "ComfyUI/main.py", que NUNCA aparece ali — o servidor velho
+    sobrevivia, subir_comfy() reaproveitava, e os nodes instalados
+    depois do boot simplesmente nao existiam. Sem erro nenhum: o pior
+    tipo de falha.
+    """
+    cel5 = _celula_de_codigo("#@title 5.")
+    m = re.search(r"subprocess\.Popen\(\s*\n?\s*\[([^\]]*)\]", cel5)
+    assert m, "Popen do ComfyUI nao encontrado"
+    argv = [a.strip().strip('"\'') for a in m.group(1).split(",")]
+    linha = " ".join(argv)
+    assert linha.startswith("python main.py"), linha
+
+    padroes = re.findall(r'"pkill",\s*(?:"-\w+",\s*)*"-f",\s*"([^"]+)"', cel5)
+    assert padroes, "nenhum pkill -f na celula 5"
+    # ao menos um padrao tem de casar com a linha de comando real
+    assert any(pat in linha or pat in "chibi_wai_comfy" for pat in padroes), (
+        f"nenhum dos padroes {padroes} casa com {linha!r}")
+    assert not any("ComfyUI/main.py" == p for p in padroes), (
+        "padrao antigo que nunca casa")
+
+
+def test_run_003_forca_restart_do_servidor():
+    """Custom node so e lido no boot: reaproveitar servidor e invalido."""
+    cel5 = _celula_de_codigo("#@title 5.")
+    cel7 = _celula_de_codigo("#@title 7.")
+    assert "def subir_comfy(force=False)" in cel5
+    assert "def matar_comfy" in cel5
+    # no ramo do IP-Adapter o restart e obrigatorio
+    ramo = cel7.split("else:", 1)[1]
+    assert "subir_comfy(force=True)" in ramo
+    # e o baseline continua podendo reaproveitar
+    base = cel7.split("else:", 1)[0]
+    assert "force=True" not in base
+
+
+def test_falha_do_ipadapter_mostra_diagnostico_em_vez_de_so_bloquear():
+    """'FALTA' sem causa obriga o usuario a adivinhar."""
+    cel7 = _celula_de_codigo("#@title 7.")
+    assert "comfyui_wai.log" in cel7
+    assert "ModuleNotFoundError" in cel7
+    assert "IPA_DIR.exists()" in cel7
+    assert "models/ipadapter" in cel7 or "ipa_models" in cel7
