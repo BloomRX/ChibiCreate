@@ -442,3 +442,74 @@ def test_nenhuma_celula_usa_nome_que_ninguem_definiu():
         for nome in sorted(usados - disponiveis):
             problemas.append(f"celula {i}: usa '{nome}', que ninguem define")
     assert not problemas, "\n".join(problemas)
+
+
+# ---------------------------------------------------------------------------
+# Colisao de nomes entre o painel e o resto do notebook
+#
+# Regressao real: a celula 0 criou o slider `CFG` e a celula 4 define
+# `CFG = mr.get_model(...)` (um dict). Como a 4 roda depois, a celula 9
+# recebia o dict e quebrava com
+#   TypeError: float() argument must be ... not 'dict'
+# ---------------------------------------------------------------------------
+
+def _nomes_atribuidos(codigo):
+    """Nomes de modulo atribuidos no topo de uma celula."""
+    import ast
+    nomes = set()
+    try:
+        arvore = ast.parse(codigo)
+    except SyntaxError:
+        return nomes
+    for no in arvore.body:
+        if isinstance(no, ast.Assign):
+            for alvo in no.targets:
+                if isinstance(alvo, ast.Name):
+                    nomes.add(alvo.id)
+        elif isinstance(no, (ast.AnnAssign, ast.AugAssign)):
+            if isinstance(no.target, ast.Name):
+                nomes.add(no.target.id)
+    return nomes
+
+
+def test_painel_nao_colide_com_nomes_de_outras_celulas():
+    import json
+    nb = json.loads(NB.read_text())
+    codigos = [
+        (i, "".join(c["source"]))
+        for i, c in enumerate(nb["cells"])
+        if c["cell_type"] == "code"
+    ]
+    painel = [(i, s) for i, s in codigos if s.startswith("#@title 0.")]
+    assert len(painel) == 1, "esperava exatamente uma celula de painel"
+    idx_painel, src_painel = painel[0]
+
+    # so os parametros do form: sao os que o usuario edita
+    do_painel = {
+        ln.split("=")[0].strip()
+        for ln in src_painel.split("\n")
+        if "#@param" in ln and "=" in ln
+    }
+    assert "CFG_SCALE" in do_painel, "o guidance scale sumiu do painel"
+
+    for i, s in codigos:
+        if i == idx_painel:
+            continue
+        colisoes = do_painel & _nomes_atribuidos(s)
+        assert not colisoes, (
+            f"a celula de indice {i} redefine {sorted(colisoes)}, "
+            "que o painel (celula 0) tambem define. A celula posterior "
+            "vence e o valor do painel e silenciosamente descartado."
+        )
+
+
+def test_guidance_scale_nao_se_chama_CFG():
+    """`CFG` e o dict do registry; o escalar tem de ter outro nome."""
+    import re
+    codigo = _codigo("#@title 9.")
+    var = re.compile(r"(?<!%)\bCFG\b(?!%)(?!\s*\[)(?!_)")
+    for ln in codigo.split("\n"):
+        assert not var.search(ln), (
+            f"uso escalar de CFG na celula 9: {ln.strip()!r}. "
+            "CFG e o dict vindo de mr.get_model()."
+        )
