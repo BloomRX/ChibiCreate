@@ -657,6 +657,97 @@ models:
       comportamento do modelo. Benchmark comparativo apenas: NAO e pipeline
       oficial e NAO substitui o baseline FLUX.
 
+  waifu_inpaint_xl:
+    label: Waifu-Inpaint-XL (correcao localizada de figurino)
+    display_name: Waifu-Inpaint-XL
+    task: sdxl_inpainting_9ch
+    pipeline_type: sdxl_inpaint_9ch
+    status: MODEL_MISSING
+    repo: ShinoharaHare/Waifu-Inpaint-XL
+    disk_gb: 7.0
+    vram_gb: 10.0
+    vram_estimated: true
+    vram_note: >-
+      [TEST REQUIRED] Estimativa por analogia com SDXL inpaint fp16 a 1024px.
+      Nao medido: o peso ainda nao foi obtido (repo gated).
+    commercial_status: pending_human_review
+    matrix_candidate: false
+    matrix_exclusion_reason: >-
+      Nao entra na matriz de avaliacao de modelos de EDICAO
+      (notebooks/model_eval_*.ipynb). Aquela matriz compara modelos que
+      recebem uma imagem e a reinterpretam inteira; este corrige apenas a
+      regiao mascarada de uma imagem ja gerada, e e avaliado no seu proprio
+      laboratorio (notebooks/waifu_inpaint_xl_lab.ipynb).
+    purpose: >-
+      Corrigir/redesenhar SOMENTE a regiao da roupa de uma personagem ja
+      transformada em chibi, preservando rosto, cabelo, pele, pose e
+      composicao. NAO substitui o wai_illustrious_sdxl_v170, que continua
+      gerando o chibi de entrada.
+    source:
+      type: huggingface
+      repo: ShinoharaHare/Waifu-Inpaint-XL
+      url: https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL
+      file: Waifu-Inpaint-XL.safetensors
+      size_bytes_declared: 6940000000
+      size_note: 6.94 GB declarado na listagem do repo; conferir apos baixar.
+      revision: unknown
+      sha256: unknown
+      gated: true
+      gated_note: >-
+        [BLOQUEIO] Repositorio GATED: "You need to agree to share your contact
+        information to access this model". A listagem de arquivos e publica,
+        mas o download exige aceite manual + token HF. NAO e possivel obter o
+        peso nem o SHA256 automaticamente. O aceite tem de ser feito por uma
+        pessoa, na conta dela.
+    lineage:
+      base_model: KBlueLeaf/kohaku-xl-beta5
+      chain:
+        - OnomaAIResearch/Illustrious-xl-early-release-v0
+        - ShinoharaHare/WAI-NSFW-illustrious-SDXL-V14.0-V-Prediction
+        - ShinoharaHare/Waifu-Inpaint-XL
+      note: >-
+        Derivado do WAI V14.0 V-PREDICTION, nao do v17.0 EPS que usamos. Sao
+        checkpoints diferentes, com parametrizacao de sampling diferente.
+    architecture:
+      unet_in_channels: 9
+      channels_note: >-
+        4 canais latentes + 1 de mascara + 4 de latente mascarado. Exige
+        InpaintModelConditioning; CheckpointLoaderSimple sozinho nao alimenta
+        os canais extras.
+      prediction_type: v_prediction
+      prediction_note: >-
+        [TEST REQUIRED] Herdado do V14.0-V-Prediction. Se o ComfyUI nao
+        autodetectar, ModelSamplingDiscrete com sampling=v_prediction e
+        obrigatorio; com eps o output sai queimado.
+      zsnr: unknown
+      zsnr_note: >-
+        Nem todo modelo v-pred usa zsnr, e aplica-lo indevidamente queima a
+        imagem. Nao ha declaracao no model card. Testar separadamente.
+    license:
+      name: CreativeML Open RAIL++-M
+      declared_by: model card
+      commercial_status: pending_human_review
+      commercial_note: >-
+        RAIL++-M permite uso comercial mas impoe restricoes de uso. A cadeia
+        inclui Illustrious e WAI, cujos termos ja estao em revisao no repo.
+        Herdar licenca por cadeia nao e automatico.
+      nsfw_lineage_note: >-
+        O modelo-pai e marcado Not-For-All-Audiences no HF. Nosso uso e
+        vestuario; registrado por transparencia de procedencia.
+    author_recommendation:
+      steps: 28
+      cfg: 5.0
+      pipeline: StableDiffusionXLInpaintPipeline
+      source: model card (exemplo oficial diffusers)
+    third_party_observation:
+      claim: >-
+        Relato em r/comfyui (2026): "it changes the color of the whole image
+        slightly". Fonte secundaria, nao verificada.
+      relevance: >-
+        Se procede, e exatamente o risco desta fase. E o motivo de
+        outside_mask_changed_percentage ser a metrica principal.
+      status: provisional_observation
+
   pony_diffusion_v6_xl:
     label: "Pony Diffusion V6 XL (research only)"
     repo: LyliaEngine/Pony_Diffusion_V6_XL
