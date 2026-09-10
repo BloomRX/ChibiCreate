@@ -93,22 +93,78 @@ source:
 # ---------------------------------------------------------------------------
 # PERSONAGEM CHIBI — run_003/output.png
 # ---------------------------------------------------------------------------
-# [HUMAN REVIEW REQUIRED] Vazio de proposito. A Run 003 nao esta no
-# repositorio, entao qualquer valor aqui seria invencao. Preencha apos ver a
-# imagem — a proporcao chibi muda TUDO: a cabeca costuma ocupar de 1/3 a 1/2
-# da altura, e o pescoco praticamente desaparece.
+# Medidos sobre `characters/waifu_001/chibi/run_003_output.png`
+# (1024x1024, caixa do sujeito x[224,806] y[27,982], W=582 H=955) e
+# conferidos visualmente com `draw_landmarks`.
 #
-# Exemplo do formato (NAO sao medidas reais):
-#   chin:      {nx: 0.50, ny: 0.38, confidence: 0.8}
-#   neck:      {nx: 0.50, ny: 0.42, confidence: 0.8}
-#   shoulder_left:  {nx: 0.36, ny: 0.47, confidence: 0.7}
-#   shoulder_right: {nx: 0.64, ny: 0.47, confidence: 0.7}
-#   waist:     {nx: 0.50, ny: 0.62, confidence: 0.7}
-target: {}
+# A proporcao chibi muda tudo: o queixo cai em ny 0.286 (na REAL, 0.168) e o
+# pescoco praticamente desaparece — cabeca e ~30% da altura. E exatamente por
+# isso que a mascara da REAL nao pode ser aplicada direto sobre esta imagem.
+#
+# `top_of_head` aqui e o topo do CABELO, nao a ponta do chifre: os chifres
+# sao apendices e nao correspondem a nada na anatomia da referencia.
+target:
+  top_of_head:
+    nx: 0.495
+    ny: 0.064
+    confidence: 0.9
+  chin:
+    nx: 0.495
+    ny: 0.286
+    confidence: 0.8
+  neck:
+    nx: 0.495
+    ny: 0.319
+    confidence: 0.8
+  # articulacao do ombro, na altura das ombreiras douradas
+  shoulder_left:
+    nx: 0.340
+    ny: 0.372
+    confidence: 0.8
+  shoulder_right:
+    nx: 0.653
+    ny: 0.372
+    confidence: 0.8
+  waist:
+    nx: 0.495
+    ny: 0.487
+    confidence: 0.75
+  hip_left:
+    nx: 0.371
+    ny: 0.539
+    confidence: 0.75
+  hip_right:
+    nx: 0.622
+    ny: 0.539
+    confidence: 0.75
+  wrist_left:
+    nx: 0.320
+    ny: 0.600
+    confidence: 0.7
+  wrist_right:
+    nx: 0.694
+    ny: 0.600
+    confidence: 0.7
+  knee_left:
+    nx: 0.426
+    ny: 0.736
+    confidence: 0.65
+  knee_right:
+    nx: 0.557
+    ny: 0.736
+    confidence: 0.65
+  ankle_left:
+    nx: 0.460
+    ny: 0.904
+    confidence: 0.7
+  ankle_right:
+    nx: 0.546
+    ny: 0.904
+    confidence: 0.7
 
 notes: >-
   Correspondencia parcial e o modo esperado aqui, nao uma falha. Apenas os
   landmarks presentes NAS DUAS imagens formam pares; os demais sao ignorados
   e ficam listados em diagnostics.landmarks_source_only. Os valores de
-  `source` sao calibracao desta personagem e nao devem ser reaproveitados
-  para outra arte.
+  `source` e `target` sao calibracao desta personagem e nao devem ser
+  reaproveitados para outra arte.

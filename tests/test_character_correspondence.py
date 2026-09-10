@@ -102,9 +102,31 @@ def test_overrides_da_waifu_completam_os_ausentes():
         assert l <= ls[nome].x <= r and t <= ls[nome].y <= b
 
 
-def test_target_da_waifu_esta_vazio_de_proposito():
-    """run_003 nao esta versionada; medir seus landmarks aqui seria invencao."""
-    assert cc.load_landmark_overrides("waifu_001").get("target") == {}
+def test_target_da_waifu_foi_medido_na_run_003():
+    """O bloco `target` foi MEDIDO na run_003 real, nao inventado.
+
+    Antes este teste exigia `target == {}` porque a run_003 ainda nao existia
+    e chutar landmarks seria invencao. A run_003 foi gerada e os 14 landmarks
+    foram medidos sobre ela e conferidos visualmente, entao a regra passa a
+    ser a coerencia do que foi medido — nao a ausencia.
+    """
+    alvo = cc.load_landmark_overrides("waifu_001").get("target")
+    assert alvo, "target sumiu do landmarks.yaml"
+
+    # Normalizados na bbox do sujeito: fora de [0,1] seria erro de medicao.
+    for nome, ponto in alvo.items():
+        assert 0.0 <= ponto["nx"] <= 1.0, f"{nome}.nx fora da bbox"
+        assert 0.0 <= ponto["ny"] <= 1.0, f"{nome}.ny fora da bbox"
+
+    # A chibi tem cabeca grande: o queixo fica MUITO mais baixo que na arte
+    # real. E justamente por isso que a mascara da REAL nao serve direta.
+    assert alvo["chin"]["ny"] > 0.25, "proporcao chibi perdida"
+
+    # Ordem anatomica vertical, sem a qual a correspondencia nao faz sentido.
+    for cima, baixo in [("top_of_head", "chin"), ("chin", "neck"),
+                        ("neck", "waist"), ("waist", "knee_left"),
+                        ("knee_left", "ankle_left")]:
+        assert alvo[cima]["ny"] < alvo[baixo]["ny"], f"{cima} abaixo de {baixo}"
 
 
 def test_personagem_sem_arquivo_nao_e_erro():

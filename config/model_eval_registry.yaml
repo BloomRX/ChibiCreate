@@ -369,6 +369,114 @@ models:
     notes: "Rodar apenas depois do Q3_K_M, em sessao separada."
 
   # ------------------------------------------------------------------
+  wai_illustrious_sdxl_v170:
+    label: WAI-illustrious-SDXL (benchmark comparativo)
+    matrix_candidate: false
+    matrix_exclusion_reason: >
+      Nao entra na matriz de avaliacao de modelos de EDICAO
+      (notebooks/model_eval_*.ipynb). Aquela matriz compara modelos que
+      recebem imagem como referencia; este e um checkpoint SDXL de
+      geracao com img2img, avaliado no seu proprio benchmark
+      comparativo (notebooks/wai_illustrious_sdxl_eval.ipynb).
+      Misturar os dois faria a matriz comparar coisas diferentes.
+    repo: null
+    source: civitai
+    source_url: https://civitai.red/models/827184/wai-illustrious-sdxl
+    civitai_model_id: 827184
+    civitai_model_version_id: null
+    civitai_version_id_verified: false
+    revision: null
+    revision_verified: false
+    version_note: >
+      [BLOQUEIO REAL] O usuario pediu para identificar a versao NO CIVITAI e
+      registrar model_id, modelVersionId, arquivo e SHA256. civitai.red e
+      civitai.com estao FORA da allowlist de egress desta sandbox (handshake
+      TLS morre). Portanto modelVersionId, nome exato do arquivo e SHA256
+      NAO foram verificados e ficam null. Nao inventamos esses valores e nao
+      trocamos por outra versao do WAI por conta propria.
+      O `models.lock.yaml` ja continha uma entrada anterior apontando v17.0,
+      tambem nao verificada. A versao efetiva DEVE ser fixada por um humano
+      no Colab (que enxerga o Civitai) antes da primeira execucao.
+    base_model: Illustrious-XL (SDXL)
+    params: "~2.6B (UNet SDXL finetune)"
+    pipeline_type: sdxl_checkpoint_img2img
+    input_mode: img2img_latent
+    references_supported: 0
+    reference_limitation: >
+      Checkpoint SDXL puro NAO possui mecanismo nativo de multi-referencia.
+      FLUX.2 usa ReferenceLatent e Qwen-Edit usa TextEncodeQwenImageEdit;
+      SDXL nao tem equivalente. O unico caminho com nodes Core e img2img
+      (VAEEncode -> KSampler com denoise < 1.0), que aceita UMA imagem e
+      preserva COMPOSICAO/CORES, nao IDENTIDADE.
+      Consequencia direta: a RUN 003 do WAI NAO e equivalente a RUN 003 do
+      FLUX. IP-Adapter e ControlNet dariam mais referencias, mas estao fora
+      de escopo por instrucao explicita.
+    parameters:
+      steps: 30
+      cfg: 7.0
+      sampler: euler_ancestral
+      scheduler: normal
+      denoise: 0.5
+      denoise_status: BASELINE_HYPOTHESIS
+      denoise_note: >
+        0.5 e o mesmo valor usado no resto do projeto, para nao favorecer
+        artificialmente este candidato. Nao e um valor otimizado: denoise
+        baixo preserva a pose original mas resiste a virar chibi; denoise
+        alto vira chibi mas perde identidade. Nao foi feito sweep.
+      resolution: [1024, 1024]
+      resolution_note: >
+        1024x1024 = nativo do SDXL e mesmo formato quadrado das entradas do
+        projeto. Illustrious suporta ate 1536x1536, mas 1024 mantem a
+        comparacao com o FLUX honesta (mesma resolucao de saida).
+      batch: 1
+      seed: 42
+    prompt_override_prefix: ""
+    prompt_override_reason: >
+      Nenhum prefixo. Ao contrario do Pony (que EXIGE score tags por
+      documentacao do autor), o WAI/Illustrious nao exige prefixo obrigatorio.
+      Adicionar "masterpiece, best quality" seria embelezar artificialmente o
+      candidato e quebraria a comparacao com o FLUX.
+    negative_prompt_override: "bad quality, worst quality, worst detail, sketch, censor"
+    negative_prompt_reason: >
+      Negativo declarado pelo proprio autor do checkpoint. SDXL usa prompt
+      negativo REAL (dois CLIPTextEncode), diferente do FLUX que zera o
+      condicionamento. Registrado como override porque e capacidade nativa
+      do ecossistema, nao invencao nossa.
+    download_gb: 7.0
+    download_estimated: true
+    vram_gb: 10.0
+    vram_estimated: true
+    vram_note: "SDXL fp16 ~8-10 GB. Cabe na T4 (15 GB). Nao medido por nos."
+    disk_gb: 12.0
+    ram_gb: 12.0
+    license: faipl-1.0-sd
+    license_name: Fair AI Public License 1.0-SD
+    license_link: https://freedevproject.org/faipl-1.0-sd/
+    license_source: >
+      Herdada do Illustrious-XL. NAO lida em fonte primaria: o Civitai esta
+      bloqueado nesta sandbox. Corroborada por model cards espelho no
+      HuggingFace (John6666/wai-nsfw-illustrious-*) que declaram
+      license_name: faipl-1.0-sd.
+    license_verified: false
+    license_conflict_note: >
+      O usuario observou "Commercial use allowed" na interface do Civitai.
+      Isso e registrado como evidencia, mas NAO substitui o texto da licenca:
+      os botoes do Civitai sao metadados preenchidos pelo autor e ja
+      divergiram do LICENSE em outros modelos. A FAIPL diz que o output nao e
+      coberto, mas tambem fala em proibir monetizacao proprietaria
+      closed-source; a OnomaAI reconheceu a ambiguidade publicamente.
+      Registrar os dois lados sem reinterpretar.
+    commercial_status: pending_human_review
+    commercial_banner: "Benchmark comparativo — licenca pendente de revisao humana"
+    excluded_from_commercial_ranking: false
+    status: MODEL_MISSING
+    notes: >
+      [HUMAN REVIEW REQUIRED] Nome original do projeto e
+      "WAI-NSFW-illustrious-SDXL", com foco declarado em conteudo adulto. Nao
+      adicionamos nenhuma tag NSFW aos prompts; registramos porque afeta o
+      comportamento do modelo. Benchmark comparativo apenas: NAO e pipeline
+      oficial e NAO substitui o baseline FLUX.
+
   pony_diffusion_v6_xl:
     label: "Pony Diffusion V6 XL (research only)"
     repo: LyliaEngine/Pony_Diffusion_V6_XL

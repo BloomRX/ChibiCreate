@@ -35,13 +35,41 @@ def _nb(path: Path) -> tuple[dict, str, list[str]]:
 # Registry / dropdown
 # ----------------------------------------------------------------------
 
+
+def _matrix_items(reg):
+    """(key, config) apenas dos candidatos da MATRIZ.
+
+    O registry tambem hospeda modelos avaliados fora da matriz (ex.: o
+    benchmark WAI), que nao tem os campos que a matriz exige.
+    """
+    return [(k, reg["models"][k]) for k in mr.matrix_keys(reg)]
+
+
 def test_registry_carrega_e_tem_os_cinco_modelos():
+    """A MATRIZ tem cinco candidatos — nem todo modelo do registry entra nela."""
     reg = mr.load_registry()
     esperados = {
         "longcat_image_edit", "z_image_turbo", "qwen_edit_2511_q3_k_m",
         "qwen_edit_2511_q4_0", "pony_diffusion_v6_xl",
     }
-    assert set(reg["models"]) == esperados, set(reg["models"])
+    assert set(mr.matrix_keys(reg)) == esperados, mr.matrix_keys(reg)
+
+
+def test_wai_esta_no_registry_mas_fora_da_matriz():
+    """O benchmark WAI tem registry proprio, nao polui a matriz de edicao.
+
+    Ele precisa estar no registry (licenca, parametros e limitacao de
+    referencia versionados), mas comparar um checkpoint SDXL img2img com
+    modelos de edicao por referencia seria comparar coisas diferentes.
+    """
+    reg = mr.load_registry()
+    assert "wai_illustrious_sdxl_v170" in reg["models"]
+    assert "wai_illustrious_sdxl_v170" not in mr.matrix_keys(reg)
+    m = reg["models"]["wai_illustrious_sdxl_v170"]
+    assert m["matrix_candidate"] is False
+    assert m["matrix_exclusion_reason"].strip()
+    # A limitacao central: SDXL nao tem multi-referencia.
+    assert m["references_supported"] == 0
 
 
 def test_dropdown_lista_todos_e_resolve_o_adapter_certo():
@@ -49,9 +77,9 @@ def test_dropdown_lista_todos_e_resolve_o_adapter_certo():
     reg = mr.load_registry()
     labels = mr.dropdown_options(reg)
     assert len(labels) == len(set(labels)), "rotulos duplicados no dropdown"
-    assert len(labels) == len(reg["models"])
+    assert len(labels) == len(mr.matrix_keys(reg))
 
-    for key, m in reg["models"].items():
+    for key, m in _matrix_items(reg):
         assert mr.key_for_label(m["label"], reg) == key
         cfg = mr.get_model(key, reg)
         assert cfg is m
@@ -82,9 +110,9 @@ def test_selecionar_um_modelo_nao_referencia_arquivos_dos_outros():
     outros.
     """
     reg = mr.load_registry()
-    for key, m in reg["models"].items():
+    for key, m in _matrix_items(reg):
         blob = json.dumps(m)
-        for outro, om in reg["models"].items():
+        for outro, om in _matrix_items(reg):
             if outro == key or om.get("repo") == m.get("repo"):
                 continue
             assert om["repo"] not in blob, (
@@ -102,7 +130,7 @@ def test_notebooks_baixam_apenas_o_modelo_selecionado():
         assert "for k, m in reg['models']" not in src.replace('"', "'")
         # Os repos nao podem estar hardcoded no notebook: vem do registry.
         reg = mr.load_registry()
-        for m in reg["models"].values():
+        for m in [m for _, m in _matrix_items(reg)]:
             assert m["repo"] not in src, (
                 f"{nb.name} tem {m['repo']} hardcoded — deve vir do registry")
 
@@ -544,7 +572,7 @@ def test_notebooks_usam_o_registry_e_nao_condicionais_por_modelo():
         for m in mr.load_registry()["models"].values():
             assert f"== '{m['label']}'" not in src
             assert f'== "{m["label"]}"' not in src
-        for key in mr.model_keys():
+        for key in mr.matrix_keys():
             assert f"MODEL_KEY == '{key}'" not in src
             assert f'MODEL_KEY == "{key}"' not in src
 
@@ -831,7 +859,7 @@ def test_plano_de_download_inclui_text_encoder_e_vae():
 
 
 def test_disco_exigido_cobre_o_download_completo():
-    for key in mr.model_keys():
+    for key in mr.matrix_keys():
         m = mr.get_model(key)
         assert m["disk_gb"] >= m["download_gb"], (
             f"{key}: disco {m['disk_gb']} < download {m['download_gb']}")
@@ -1013,7 +1041,7 @@ def test_nenhuma_celula_tem_condicional_por_modelo():
     for nb_path in (NB1, NB2):
         _, _, celulas = _nb(nb_path)
         for c in celulas:
-            for key in mr.model_keys():
+            for key in mr.matrix_keys():
                 assert f"== '{key}'" not in c and f'== "{key}"' not in c, (
                     f"{nb_path.name}: condicional por modelo ({key})")
 

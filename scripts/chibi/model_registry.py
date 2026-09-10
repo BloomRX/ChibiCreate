@@ -54,13 +54,27 @@ def model_keys(registry: dict[str, Any] | None = None) -> list[str]:
     return list(reg["models"])
 
 
+def matrix_keys(registry: dict[str, Any] | None = None) -> list[str]:
+    """Modelos que participam da MATRIZ de avaliacao de modelos de edicao.
+
+    Nem todo modelo do registry entra na matriz. Um checkpoint SDXL de
+    geracao (img2img) nao e comparavel com modelos de edicao por referencia,
+    entao ele mora no registry — para ter licenca, parametros e limitacoes
+    versionados como todo mundo — mas fica fora do dropdown da matriz.
+    Quem se exclui declara `matrix_candidate: false` no proprio registry.
+    """
+    reg = registry or load_registry()
+    return [k for k, m in reg["models"].items()
+            if m.get("matrix_candidate", True)]
+
+
 def dropdown_options(registry: dict[str, Any] | None = None) -> list[str]:
     """Rotulos exibidos no dropdown, na ordem do registry.
 
     A ordem importa: o Qwen Q3_K_M (`try_first`) deve aparecer antes do Q4.
     """
     reg = registry or load_registry()
-    return [m["label"] for m in reg["models"].values()]
+    return [reg["models"][k]["label"] for k in matrix_keys(reg)]
 
 
 def key_for_label(label: str, registry: dict[str, Any] | None = None) -> str:
