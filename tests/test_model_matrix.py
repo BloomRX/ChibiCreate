@@ -58,9 +58,10 @@ def test_registry_carrega_e_tem_os_cinco_modelos():
 def test_wai_esta_no_registry_mas_fora_da_matriz():
     """O benchmark WAI tem registry proprio, nao polui a matriz de edicao.
 
-    Ele precisa estar no registry (licenca, parametros e limitacao de
-    referencia versionados), mas comparar um checkpoint SDXL img2img com
-    modelos de edicao por referencia seria comparar coisas diferentes.
+    Ele precisa estar no registry (licenca, parametros e mecanismo de
+    referencia versionados), mas a matriz compara modelos de EDICAO por
+    referencia; o WAI e um checkpoint de GERACAO com IP-Adapter. Coisas
+    diferentes.
     """
     reg = mr.load_registry()
     assert "wai_illustrious_sdxl_v170" in reg["models"]
@@ -68,8 +69,9 @@ def test_wai_esta_no_registry_mas_fora_da_matriz():
     m = reg["models"]["wai_illustrious_sdxl_v170"]
     assert m["matrix_candidate"] is False
     assert m["matrix_exclusion_reason"].strip()
-    # A limitacao central: SDXL nao tem multi-referencia.
-    assert m["references_supported"] == 0
+    # Multi-referencia via IP-Adapter: 3 referencias, mecanismo declarado.
+    assert m["references_supported"] == 3
+    assert m["reference_mechanism"] == "ipadapter_encode_combine"
 
 
 def test_dropdown_lista_todos_e_resolve_o_adapter_certo():

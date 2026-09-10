@@ -399,30 +399,118 @@ models:
       no Colab (que enxerga o Civitai) antes da primeira execucao.
     base_model: Illustrious-XL (SDXL)
     params: "~2.6B (UNet SDXL finetune)"
-    pipeline_type: sdxl_checkpoint_img2img
-    input_mode: img2img_latent
-    references_supported: 0
-    reference_limitation: >
-      Checkpoint SDXL puro NAO possui mecanismo nativo de multi-referencia.
-      FLUX.2 usa ReferenceLatent e Qwen-Edit usa TextEncodeQwenImageEdit;
-      SDXL nao tem equivalente. O unico caminho com nodes Core e img2img
-      (VAEEncode -> KSampler com denoise < 1.0), que aceita UMA imagem e
-      preserva COMPOSICAO/CORES, nao IDENTIDADE.
-      Consequencia direta: a RUN 003 do WAI NAO e equivalente a RUN 003 do
-      FLUX. IP-Adapter e ControlNet dariam mais referencias, mas estao fora
-      de escopo por instrucao explicita.
+    pipeline_type: sdxl_checkpoint_ipadapter
+    input_mode: ipadapter_embeds
+    references_supported: 3
+    reference_mechanism: ipadapter_encode_combine
+    reference_mechanism_note: >
+      CORRECAO (diretiva do usuario): "SDXL nao tem multi-referencia nativa"
+      NAO significa "SDXL nao consegue usar multiplas referencias". O
+      checkpoint nao tem mecanismo proprio como o ReferenceLatent do FLUX,
+      mas o IP-Adapter fornece multi-referencia real via CLIP-Vision:
+        full_body -> IPAdapterEncoder --+
+        face      -> IPAdapterEncoder --+-> IPAdapterCombineEmbeds
+        outfit    -> IPAdapterEncoder --+           |
+                                          IPAdapterEmbeds -> KSampler
+      Escolhemos Encoder+Combine em vez de empilhar IPAdapterAdvanced em
+      serie porque so essa rota permite declarar e auditar o peso de CADA
+      referencia separadamente.
+    reference_equivalence_note: >
+      [NAO AFIRMAR EQUIVALENCIA] FLUX faz multi-referencia pelo mecanismo
+      proprio (ReferenceLatent, no espaco latente); WAI faz por IP-Adapter
+      (embeddings CLIP-Vision injetados por cross-attention paralela). Sao
+      implementacoes DIFERENTES. A comparacao do benchmark e sobre o
+      RESULTADO VISUAL com as MESMAS referencias de entrada, nunca sobre
+      equivalencia de arquitetura.
+
+    # BLOQUEIO DECLARADO: multi-referencia exige custom node de terceiro.
+    requires_custom_node: ComfyUI_IPAdapter_plus
+    custom_node_repo: https://github.com/cubiq/ComfyUI_IPAdapter_plus
+    custom_node_ack_required: true
+    custom_node_note: >
+      A regra do projeto proibe instalar custom node arbitrariamente. Este
+      nao e arbitrario: e a implementacao de referencia do IP-Adapter em
+      ComfyUI (autor cubiq), exigida explicitamente pela diretiva. O
+      notebook pede aceite EXPLICITO antes de instalar e registra o commit
+      efetivamente usado. Se a instalacao falhar ou os nodes nao aparecerem
+      no /object_info, o benchmark PARA — a Run 003 nunca cai para uma
+      referencia em silencio.
+    custom_node_nodes:
+      - IPAdapterModelLoader
+      - IPAdapterEncoder
+      - IPAdapterCombineEmbeds
+      - IPAdapterEmbeds
+
+    # Pesos auxiliares do IP-Adapter (nao sao o checkpoint).
+    ipadapter_models:
+      adapter:
+        file: ip-adapter-plus_sdxl_vit-h.safetensors
+        repo: h94/IP-Adapter
+        repo_path: sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors
+        target_dir: models/ipadapter
+        license: apache-2.0
+        license_verified: true
+        license_source: https://huggingface.co/h94/IP-Adapter
+        sha256: null
+        sha256_note: >
+          Preenchido na execucao, a partir do arquivo realmente baixado.
+          Nao inventamos hash aqui.
+        choice_note: >
+          Variante "plus" usa patch embeddings e fica MAIS proxima da imagem
+          de referencia que a base — que e exatamente o eixo medido
+          (DESIGN_PRESERVATION). Pareado com encoder ViT-H conforme a tabela
+          oficial do cubiq; trocar o encoder por bigG aqui daria erro de
+          dimensao de tensor.
+      clip_vision:
+        file: CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors
+        repo: h94/IP-Adapter
+        repo_path: models/image_encoder/model.safetensors
+        target_dir: models/clip_vision
+        rename_required: true
+        rename_note: >
+          O arquivo chama-se model.safetensors no repo; o IP-Adapter exige o
+          nome canonico acima. Renomear faz parte da instalacao.
+        license: apache-2.0
+        license_verified: true
+        sha256: null
+
+    reference_roles:
+      full_body:
+        weight: 1.0
+        role: composicao, silhueta e proporcao gerais
+      face:
+        weight: 0.6
+        role: identidade facial
+      outfit:
+        weight: 0.8
+        role: roupa, capa e ornamentos dourados
+    reference_weights_status: BASELINE_EXPERIMENTAL
+    reference_weights_note: >
+      Valores iniciais dados pela diretiva (full_body 1.0 / face 0.6 /
+      outfit 0.8). NAO sao valores validados nem otimizados: sao hipotese
+      inicial. Sem sweep nesta rodada — uma unica configuracao baseline,
+      com os tres pesos registrados individualmente no recipe. A calibracao
+      fica para uma rodada especifica.
+    combine_method: concat
+    combine_method_status: BASELINE_EXPERIMENTAL
+    combine_method_note: >
+      "concat" preserva os tokens de cada referencia em vez de media-los,
+      entao roupa e rosto nao se dissolvem um no outro. Alternativas do node
+      (add, subtract, average, norm average, max, min) nao foram testadas
+      nesta rodada.
+
     parameters:
       steps: 30
       cfg: 7.0
       sampler: euler_ancestral
       scheduler: normal
-      denoise: 0.5
-      denoise_status: BASELINE_HYPOTHESIS
+      denoise: 1.0
+      denoise_status: DERIVED_FROM_PIPELINE
       denoise_note: >
-        0.5 e o mesmo valor usado no resto do projeto, para nao favorecer
-        artificialmente este candidato. Nao e um valor otimizado: denoise
-        baixo preserva a pose original mas resiste a virar chibi; denoise
-        alto vira chibi mas perde identidade. Nao foi feito sweep.
+        1.0 porque a geracao parte de EmptyLatentImage: a referencia entra
+        pelo IP-Adapter, nao pelo latente inicial. Usar img2img junto faria
+        full_body entrar duas vezes (latente + embed) e contaminaria o peso
+        declarado de cada referencia. Sem sweep.
       resolution: [1024, 1024]
       resolution_note: >
         1024x1024 = nativo do SDXL e mesmo formato quadrado das entradas do
@@ -430,6 +518,15 @@ models:
         comparacao com o FLUX honesta (mesma resolucao de saida).
       batch: 1
       seed: 42
+    workflows:
+      run_001: experimental/wai_illustrious_ipadapter@v1
+      run_002: experimental/wai_illustrious_ipadapter@v1
+      run_003: experimental/wai_illustrious_ipadapter@v2
+    workflows_note: >
+      v1 = 1 referencia (full_body), sem combine. v2 = 3 referencias com
+      IPAdapterEncoder x3 + IPAdapterCombineEmbeds. Runs 001 e 002 usam o
+      MESMO workflow: a 002 e repeticao exata da 001.
+
     prompt_override_prefix: ""
     prompt_override_reason: >
       Nenhum prefixo. Ao contrario do Pony (que EXIGE score tags por
@@ -442,11 +539,15 @@ models:
       negativo REAL (dois CLIPTextEncode), diferente do FLUX que zera o
       condicionamento. Registrado como override porque e capacidade nativa
       do ecossistema, nao invencao nossa.
-    download_gb: 7.0
+    download_gb: 10.5
     download_estimated: true
-    vram_gb: 10.0
+    vram_gb: 12.0
     vram_estimated: true
-    vram_note: "SDXL fp16 ~8-10 GB. Cabe na T4 (15 GB). Nao medido por nos."
+    vram_note: >
+      SDXL fp16 ~8-10 GB, mais IP-Adapter (~1 GB) e CLIP-Vision ViT-H
+      (~2.5 GB, roda no encode). Estimativa ~12 GB, ainda dentro da T4 de
+      15 GB, mas com folga menor que a rota img2img. Nao medido por nos: o
+      preflight do notebook mede de verdade e emite BLOCKED se nao couber.
     disk_gb: 12.0
     ram_gb: 12.0
     license: faipl-1.0-sd

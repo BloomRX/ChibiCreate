@@ -11,6 +11,7 @@ do benchmark FLUX que serve de baseline.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -24,7 +25,9 @@ from chibi import model_registry as mr  # noqa: E402
 from chibi import experiment  # noqa: E402
 
 NB = ROOT / "notebooks" / "wai_illustrious_sdxl_eval.ipynb"
-WF = ROOT / "workflows" / "experimental" / "wai_illustrious_chibi" / "v1.json"
+WF_DIR = ROOT / "workflows" / "experimental" / "wai_illustrious_ipadapter"
+WF = WF_DIR / "v1.json"     # 1 referencia  (runs 001/002)
+WF2 = WF_DIR / "v2.json"    # 3 referencias (run 003)
 KEY = "wai_illustrious_sdxl_v170"
 
 
@@ -33,12 +36,9 @@ def _nb_source() -> str:
     return "\n".join("".join(c["source"]) for c in nb["cells"])
 
 
-def _wf() -> dict:
-    return json.loads(WF.read_text())
-
-
-def _nodes() -> dict:
-    return {k: v for k, v in _wf().items() if not k.startswith("_")}
+def _nodes(path: Path = WF) -> dict:
+    g = json.loads(path.read_text())
+    return {k: v for k, v in g.items() if not k.startswith("_")}
 
 
 # ----------------------------------------------------------------------
@@ -77,79 +77,181 @@ def test_notebook_exige_a_versao_antes_de_baixar():
     src = _nb_source()
     assert "CIVITAI_VERSION_ID" in src
     assert "CKPT_SHA256_ESPERADO" in src
-    assert "PARE: fixe a versao na celula 4 antes de baixar." in src
-    assert "PARE: SHA256 diverge do declarado na celula 4." in src
+    assert "BLOCKED — fixe a versao do checkpoint na celula 4" in src
+    assert "BLOCKED — SHA256 do checkpoint diverge do declarado." in src
 
 
 # ----------------------------------------------------------------------
-# A limitacao central: SDXL nao tem multi-referencia
+# Multi-referencia via IP-Adapter
 # ----------------------------------------------------------------------
 
-def test_registry_declara_zero_referencias():
+def test_registry_declara_tres_referencias_via_ipadapter():
+    """CORRECAO: SDXL nao ter mecanismo proprio nao impede multi-referencia.
+
+    O IP-Adapter fornece multi-referencia real. O registry passou de
+    references_supported 0 para 3.
+    """
     m = mr.get_model(KEY)
-    assert m["references_supported"] == 0
-    assert m["pipeline_type"] == "sdxl_checkpoint_img2img"
-    assert "IP-Adapter" in m["reference_limitation"]
+    assert m["references_supported"] == 3
+    assert m["reference_mechanism"] == "ipadapter_encode_combine"
+    assert m["pipeline_type"] == "sdxl_checkpoint_ipadapter"
+    assert m["input_mode"] == "ipadapter_embeds"
 
 
-def test_workflow_tem_exatamente_um_loadimage():
-    """Se alguem adicionar um segundo LoadImage, a limitacao mudou de fato
-    e o registry/documentacao precisam mudar junto."""
-    loads = [k for k, v in _nodes().items() if v["class_type"] == "LoadImage"]
-    assert len(loads) == 1, f"esperado 1 LoadImage, achei {len(loads)}"
+def test_nao_afirma_equivalencia_de_arquitetura_com_o_flux():
+    """A comparacao e de RESULTADO VISUAL, nao de mecanismo interno."""
+    nota = " ".join(mr.get_model(KEY)["reference_equivalence_note"].split())
+    assert "ReferenceLatent" in nota
+    assert "IP-Adapter" in nota
+    assert "DIFERENTES" in nota or "diferentes" in nota
+
+    src = " ".join(_nb_source().split())
+    assert "Sao implementacoes **diferentes**" in src
+    assert "nunca sobre equivalencia de arquitetura" in src
 
 
-def test_workflow_nao_finge_mecanismo_de_referencia():
-    """SDXL nao tem ReferenceLatent (FLUX) nem TextEncodeQwenImageEdit."""
-    classes = {v["class_type"] for v in _nodes().values()}
-    for proibido in ("ReferenceLatent", "TextEncodeQwenImageEditPlus",
-                     "TextEncodeQwenImageEdit", "IPAdapter",
-                     "IPAdapterApply", "ControlNetApply",
-                     "ControlNetApplyAdvanced"):
-        assert proibido not in classes, f"{proibido} nao pertence a este benchmark"
+def test_v1_tem_uma_referencia_e_v2_tem_tres():
+    for path, esperado in ((WF, 1), (WF2, 3)):
+        n = _nodes(path)
+        loads = [k for k, v in n.items() if v["class_type"] == "LoadImage"]
+        encs = [k for k, v in n.items()
+                if v["class_type"] == "IPAdapterEncoder"]
+        assert len(loads) == esperado, f"{path.name}: {len(loads)} LoadImage"
+        assert len(encs) == esperado, f"{path.name}: {len(encs)} Encoder"
 
 
-def test_run_003_nunca_e_chamada_de_equivalente_a_tres_referencias():
-    """A proibicao textual mais importante da diretiva."""
-    src = _nb_source().lower()
+def test_run_003_usa_encoder_mais_combine_nao_advanced_em_serie():
+    """Encoder+Combine e o que permite peso POR REFERENCIA.
 
-    # O termo pode aparecer, mas SOMENTE sendo repudiado. Toda ocorrencia
-    # tem de estar na frase que diz que usa-lo seria mentira.
-    for termo in ("3-reference equivalent", "equivalente a 3 referencias"):
-        i = 0
-        while (i := src.find(termo, i)) != -1:
-            ctx = src[max(0, i - 120):i + 120]
-            assert ("seria mentira" in ctx or "nao chamar" in ctx), (
-                f"{termo!r} usado como afirmacao: ...{ctx}...")
-            i += len(termo)
-
-    # E precisa afirmar o contrario, explicitamente.
-    assert "**nao e** equivalente a run 003 do flux" in " ".join(src.split())
-    assert "1 referencia (full_body), nao 3" in src
+    Empilhar IPAdapterAdvanced em serie geraria imagem, mas nao deixaria
+    declarar nem auditar o peso de cada referencia — que e justamente o
+    que a diretiva exige registrar.
+    """
+    classes = [v["class_type"] for v in _nodes(WF2).values()]
+    assert classes.count("IPAdapterEncoder") == 3
+    assert "IPAdapterCombineEmbeds" in classes
+    assert "IPAdapterEmbeds" in classes
+    assert "IPAdapterAdvanced" not in classes
 
 
-def test_notebook_registra_quais_referencias_entraram_e_quais_nao():
+def test_cada_encoder_tem_seu_proprio_placeholder_de_peso():
+    pesos = {v["inputs"]["weight"] for v in _nodes(WF2).values()
+             if v["class_type"] == "IPAdapterEncoder"}
+    assert pesos == {"%%WEIGHT_FULL_BODY%%", "%%WEIGHT_FACE%%",
+                     "%%WEIGHT_OUTFIT%%"}
+
+
+def test_embeds_positivos_e_negativos_sao_combinados_em_separado():
+    """Cada Encoder devolve (pos_embed, neg_embed); os dois precisam ser
+    combinados, senao o negativo de uma referencia so seria usado."""
+    n = _nodes(WF2)
+    combines = {k: v for k, v in n.items()
+                if v["class_type"] == "IPAdapterCombineEmbeds"}
+    assert len(combines) == 2, "faltou combinar pos e neg separadamente"
+    saidas = {tuple(v["inputs"]["embed1"]) for v in combines.values()}
+    assert saidas == {("12", 0), ("12", 1)}
+
+    emb = next(v for v in n.values() if v["class_type"] == "IPAdapterEmbeds")
+    assert emb["inputs"]["pos_embed"][0] in combines
+    assert emb["inputs"]["neg_embed"][0] in combines
+
+
+def test_pesos_baseline_declarados_como_nao_validados():
+    m = mr.get_model(KEY)
+    assert m["reference_weights_status"] == "BASELINE_EXPERIMENTAL"
+    pesos = {k: v["weight"] for k, v in m["reference_roles"].items()}
+    assert pesos == {"full_body": 1.0, "face": 0.6, "outfit": 0.8}
+    assert m["combine_method_status"] == "BASELINE_EXPERIMENTAL"
+
+
+def test_geracao_parte_de_latente_vazio_nao_de_img2img():
+    """Se usassemos img2img, full_body entraria duas vezes (latente + embed)
+    e o peso declarado de cada referencia deixaria de valer."""
+    for path in (WF, WF2):
+        classes = {v["class_type"] for v in _nodes(path).values()}
+        assert "EmptyLatentImage" in classes
+        assert "VAEEncode" not in classes
+    assert mr.get_model(KEY)["parameters"]["denoise"] == 1.0
+
+
+def test_loaders_explicitos_para_nao_quebrar_o_pinning():
+    """O UnifiedLoader resolve arquivo por preset e pode baixar peso sozinho."""
+    for path in (WF, WF2):
+        classes = {v["class_type"] for v in _nodes(path).values()}
+        assert "IPAdapterModelLoader" in classes
+        assert "CLIPVisionLoader" in classes
+        assert "IPAdapterUnifiedLoader" not in classes
+
+
+def test_notebook_para_se_faltar_referencia_da_run():
     src = _nb_source()
-    assert '"references_used": ["full_body"]' in src
+    assert "Nao executar com menos referencias em silencio." in src
+    assert "nunca cai para uma referencia em silencio" in " ".join(src.split())
+
+
+def test_notebook_registra_referencias_usadas_e_nao_usadas():
+    src = _nb_source()
+    assert '"references_used": REFS_DESTA_RUN' in src
     assert '"references_not_used"' in src
-    assert '"multi_reference_supported": False' in src
+    assert '"reference_count"' in src
 
 
 # ----------------------------------------------------------------------
 # Nodes: so Core
 # ----------------------------------------------------------------------
 
-def test_somente_nodes_core():
-    permitidos = {
+def test_apenas_core_mais_ipadapter_declarado():
+    """Um unico custom node, o do IP-Adapter, e ele esta declarado."""
+    core = {
         "CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage",
-        "VAEEncode", "KSampler", "VAEDecode", "SaveImage",
+        "EmptyLatentImage", "KSampler", "VAEDecode", "SaveImage",
+        "CLIPVisionLoader",
     }
-    classes = {v["class_type"] for v in _nodes().values()}
-    assert classes <= permitidos, classes - permitidos
+    ipa = set(mr.get_model(KEY)["custom_node_nodes"])
+    for path in (WF, WF2):
+        classes = {v["class_type"] for v in _nodes(path).values()}
+        assert classes <= core | ipa, classes - (core | ipa)
 
 
-def test_notebook_declara_zero_custom_nodes():
-    assert '"custom_nodes": []' in _nb_source()
+def test_custom_node_declarado_com_repo_e_aceite():
+    m = mr.get_model(KEY)
+    assert m["requires_custom_node"] == "ComfyUI_IPAdapter_plus"
+    assert m["custom_node_repo"] == "https://github.com/cubiq/ComfyUI_IPAdapter_plus"
+    assert m["custom_node_ack_required"] is True
+    assert set(m["custom_node_nodes"]) == {
+        "IPAdapterModelLoader", "IPAdapterEncoder",
+        "IPAdapterCombineEmbeds", "IPAdapterEmbeds"}
+
+
+def test_notebook_exige_aceite_antes_de_instalar():
+    src = _nb_source()
+    assert "ACEITO_INSTALAR_IPADAPTER = False  #@param" in src
+    assert "BLOCKED — IP-Adapter nao instalado" in src
+
+
+def test_notebook_bloqueia_se_os_nodes_nao_aparecerem():
+    src = _nb_source()
+    assert "BLOCKED — nodes IP-Adapter ausentes" in src
+    assert "BLOCKED — IP-Adapter indisponivel" in src
+
+
+def test_pesos_auxiliares_com_licenca_e_origem():
+    for papel in ("adapter", "clip_vision"):
+        a = mr.get_model(KEY)["ipadapter_models"][papel]
+        assert a["repo"] == "h94/IP-Adapter"
+        assert a["license"] == "apache-2.0"
+        assert a["license_verified"] is True
+        assert a["file"] and a["repo_path"]
+        # Hash real vem da execucao; nao inventamos aqui.
+        assert a["sha256"] is None
+
+
+def test_adapter_plus_pareado_com_encoder_vit_h():
+    """Par obrigatorio: plus_sdxl_vit-h exige ViT-H. bigG daria erro de
+    dimensao de tensor."""
+    m = mr.get_model(KEY)["ipadapter_models"]
+    assert "plus_sdxl_vit-h" in m["adapter"]["file"]
+    assert "ViT-H-14" in m["clip_vision"]["file"]
 
 
 # ----------------------------------------------------------------------
@@ -166,10 +268,12 @@ def test_resolucao_explicita_e_compativel_com_sdxl():
     assert mr.get_model(KEY)["parameters"]["resolution"] == [1024, 1024]
 
 
-def test_denoise_e_hipotese_declarada_nao_valor_otimizado():
+def test_denoise_decorre_do_pipeline_e_esta_justificado():
+    """denoise 1.0 nao e escolha estetica: a geracao parte de latente vazio."""
     p = mr.get_model(KEY)["parameters"]
-    assert p["denoise_status"] == "BASELINE_HYPOTHESIS"
-    assert p["denoise_note"].strip()
+    assert p["denoise"] == 1.0
+    assert p["denoise_status"] == "DERIVED_FROM_PIPELINE"
+    assert "EmptyLatentImage" in p["denoise_note"]
 
 
 def test_prompt_nao_foi_embelezado_para_o_wai():
@@ -197,7 +301,7 @@ def test_prompt_base_vem_do_registry_compartilhado():
     # E a instrucao antideriva, que e o coracao do teste.
     assert "do not redesign" in base
     # O notebook consome esse prompt do registry, nao um proprio.
-    assert 'PROMPT = _reg["base_prompt"]' in _nb_source()
+    assert 'PROMPT = " ".join(_reg["base_prompt"].split())' in _nb_source()
 
 
 def test_sem_sweep_de_prompt_ou_seed():
@@ -214,6 +318,26 @@ def test_character_id_e_parametro_com_default_waifu_001():
     assert 'CHARACTER_ID = "waifu_001"  #@param' in _nb_source()
 
 
+def test_notebook_permite_escolher_a_run():
+    src = _nb_source()
+    assert "RUN = " in src and "#@param" in src
+    for r in ("Run 001", "Run 002", "Run 003"):
+        assert r in src, r
+
+
+def test_referencias_derivam_do_character_id():
+    src = _nb_source()
+    assert 'f"/content/ChibiCreate/characters/{CHARACTER_ID}/reference"' in src
+
+
+def test_workflow_nao_tem_peso_hardcoded():
+    """Os pesos entram por placeholder, nao cravados no grafo."""
+    for v in _nodes(WF2).values():
+        if v["class_type"] == "IPAdapterEncoder":
+            assert isinstance(v["inputs"]["weight"], str)
+            assert v["inputs"]["weight"].startswith("%%")
+
+
 def test_nenhum_caminho_de_personagem_hardcoded():
     """Trocar de personagem tem de ser so trocar CHARACTER_ID."""
     src = _nb_source()
@@ -224,32 +348,50 @@ def test_nenhum_caminho_de_personagem_hardcoded():
 
 
 def test_workflow_nao_tem_personagem_embutida():
-    assert "waifu" not in WF.read_text().lower()
+    for path in (WF, WF2):
+        assert "waifu" not in path.read_text().lower()
 
 
 # ----------------------------------------------------------------------
 # Hashes, reprodutibilidade, nao-mutacao
 # ----------------------------------------------------------------------
 
-def test_hashes_de_artefato_e_de_pixel_sao_registrados_separados():
+def test_recipe_registra_tudo_que_a_diretiva_pediu():
     src = _nb_source()
-    assert "artifact_sha256" in src
-    assert "output_pixel_sha256" in src
-    assert "pixel_sha256" in src
+    for campo in ('"sha256": CKPT_SHA256', '"workflow_sha256"',
+                  '"ipadapter"', '"references"', '"weight"', '"prompt"',
+                  '"negative_prompt"', '"parameters"', '"hardware"',
+                  '"execution_time_s"', '"artifact_sha256"',
+                  '"output_pixel_sha256"', '"reference_count"'):
+        assert campo in src, campo
+    # revision do custom node e sha256 dos pesos do IP-Adapter
+    assert '"revision": IPA_TAG' in src
+    assert '"sha256": real' in src
 
 
-def test_run_002_repete_a_001_com_a_mesma_seed():
-    """Mesma seed, mesmo prompt, mesmos parametros — repeticao real."""
+def test_runs_001_e_002_usam_o_mesmo_workflow_e_a_mesma_referencia():
+    """A 002 e repeticao EXATA da 001: so a 003 muda de workflow."""
+    m = mr.get_model(KEY)
+    w = m["workflows"]
+    assert w["run_001"] == w["run_002"]
+    assert w["run_001"].endswith("@v1")
+    assert w["run_003"].endswith("@v2")
+
     src = _nb_source()
-    i1 = src.index("#@title 8. RUN 001")
-    i2 = src.index("#@title 9. RUN 002")
-    i3 = src.index("#@title 10. RUN 003")
-    r1, r2 = src[i1:i2], src[i2:i3]
-    for bloco in (r1, r2):
-        assert "--seed $SEED" in bloco
-        assert '--prompt "$PROMPT"' in bloco
-    # A 002 nao pode introduzir override que a 001 nao tinha.
-    assert "--denoise" not in r2
+    assert 'WORKFLOW_VERSION = "v2" if IS_RUN_003 else "v1"' in src
+    assert ('REFS_DESTA_RUN = (["full_body", "face", "outfit"] if IS_RUN_003'
+            in src)
+
+
+def test_notebook_compara_as_entradas_da_001_e_002():
+    src = _nb_source()
+    assert 'for campo in ("prompt", "negative_prompt", "parameters",' in src
+    assert "checkpoint diferente" in src
+
+
+def test_nao_sobrescreve_run_anterior():
+    src = _nb_source()
+    assert "[no overwrite]" in src
 
 
 def test_nao_promete_determinismo():
@@ -260,7 +402,10 @@ def test_nao_promete_determinismo():
 def test_entradas_sao_lidas_nao_modificadas():
     src = _nb_source()
     assert "NAO sao modificados" in src
-    assert ".write_bytes(" not in src.split("#@title 3.")[1].split("#@title 4.")[0]
+    celula3 = src.split("#@title 3.")[1].split("#@title 4.")[0]
+    assert ".write_bytes(" not in celula3
+    # A copia para o input do ComfyUI le a origem e escreve so no destino.
+    assert "(COMFY_INPUT / nome).write_bytes(origem.read_bytes())" in src
 
 
 def test_nao_ha_ranking_automatico():
@@ -272,8 +417,15 @@ def test_nao_ha_ranking_automatico():
 
 def test_montagem_comparativa_tem_os_cinco_paineis():
     src = _nb_source()
-    for rotulo in ("ORIGINAL", "FLUX RUN 001", "FLUX RUN 003", "WAI RUN"):
+    for rotulo in ("ORIGINAL", "FLUX RUN 001", "FLUX RUN 003",
+                   "WAI RUN 001", "WAI RUN 003"):
         assert rotulo in src, rotulo
+
+
+def test_montagem_rotula_os_mecanismos_distintos():
+    src = _nb_source()
+    assert "ReferenceLatent" in src
+    assert "IP-Adapter" in src
 
 
 # ----------------------------------------------------------------------
@@ -315,9 +467,14 @@ def test_nao_toca_no_baseline_flux():
     src = _nb_source()
     assert "flux2_klein_4b_eval.ipynb" not in src.replace(
         "notebooks/flux2_klein_4b_eval.ipynb`", "")  # so a mencao no cabecalho
-    for proibido in ("run_003_output.png\", \"w", "shutil.copy", "os.remove",
-                     "unlink()", "shutil.rmtree"):
+    for proibido in ("os.remove", "unlink()", "shutil.rmtree"):
         assert proibido not in src, proibido
+    # A run_003 do FLUX so pode ser LIDA na montagem comparativa.
+    for linha in src.split("\n"):
+        if "run_003_output.png" in linha:
+            proibido = ("write" in linha or "open(" in linha
+                        and "_abrir(" not in linha)
+            assert not proibido, f"escrita na run_003 do FLUX: {linha}"
 
 
 def test_nao_implementa_o_que_esta_fora_de_escopo():
@@ -326,23 +483,32 @@ def test_nao_implementa_o_que_esta_fora_de_escopo():
     Por isso o teste olha o WORKFLOW (onde uma implementacao teria de
     aparecer) e, no notebook, so as celulas de codigo.
     """
-    classes = {v["class_type"] for v in _nodes().values()}
-    for proibido in ("LoraLoader", "ControlNetLoader", "IPAdapterModelLoader",
+    classes = set()
+    for path in (WF, WF2):
+        classes |= {v["class_type"] for v in _nodes(path).values()}
+    # IP-Adapter agora E escopo; LoRA, ControlNet e inpaint continuam fora.
+    for proibido in ("LoraLoader", "LoraLoaderModelOnly", "ControlNetLoader",
                      "VAEEncodeForInpaint", "InpaintModelConditioning"):
         assert proibido not in classes, proibido
 
     nb = json.loads(NB.read_text())
     codigo = "\n".join("".join(c["source"]) for c in nb["cells"]
                        if c["cell_type"] == "code").lower()
-    for proibido in ("loraloader", "controlnetloader", "ipadapter",
-                     "lora_name", "vaeencodeforinpaint"):
+    for proibido in ("loraloader", "controlnetloader", "lora_name",
+                     "vaeencodeforinpaint", "thinplate"):
         assert proibido not in codigo, proibido
+    # \btps\b para nao casar dentro de "https".
+    assert not re.search(r"\btps\b", codigo), "TPS esta fora de escopo"
 
 
 @pytest.mark.parametrize("campo", [
-    "label", "pipeline_type", "references_supported", "reference_limitation",
-    "parameters", "license", "license_name", "license_verified",
-    "commercial_status", "status", "vram_gb", "download_gb",
+    "label", "pipeline_type", "references_supported", "reference_mechanism",
+    "reference_mechanism_note", "reference_equivalence_note",
+    "reference_roles", "reference_weights_status", "combine_method",
+    "requires_custom_node", "custom_node_repo", "custom_node_nodes",
+    "ipadapter_models", "workflows", "parameters", "license", "license_name",
+    "license_verified", "commercial_status", "status", "vram_gb",
+    "download_gb",
 ])
 def test_campos_obrigatorios_presentes(campo):
     assert campo in mr.get_model(KEY)
