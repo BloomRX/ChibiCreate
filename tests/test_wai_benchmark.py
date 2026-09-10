@@ -382,20 +382,38 @@ def test_parametros_seguem_a_recomendacao_do_autor():
     assert "denoise" in fonte and "img2img" in fonte
 
 
+
 def test_prompt_e_negative_seguem_o_estilo_curto_do_autor():
     m = mr.get_model(KEY)
     prompt = " ".join(m["prompt_override"].split())
     assert len(prompt) < len(FLUX_PROMPT_LEN_REF), "prompt do FLUX nao serve"
-    neg = m["negative_prompt_override"]
-    assert len(neg.split(",")) <= 10, neg
+    # tags do autor, no fim e sem excesso
+    assert prompt.lower().rstrip().endswith(
+        "masterpiece, best quality, amazing quality")
+    neg = " ".join(m["negative_prompt_override"].split())
     assert neg.startswith("bad quality, worst quality, worst detail, sketch")
+    assert len(neg.split(",")) <= 16, neg
+
 
 
 
 def test_diferenca_de_prompt_em_relacao_ao_flux_esta_registrada():
+    """O FLUX usa um base_prompt longo que descreve a waifu_001.
+
+    O WAI deixou de usar esse prompt — primeiro por ser longo demais para
+    um checkpoint Illustrious, agora tambem por ser especifico de uma
+    personagem. A divergencia enfraquece a comparacao 1:1 e por isso
+    precisa estar escrita, nao subentendida.
+    """
     m = mr.get_model(KEY)
-    assert "FLUX" in m["prompt_override_reason"]
-    assert "1:1" in m["prompt_override_reason"]
+    flux_prompt = mr.load_registry()["base_prompt"]
+    wai_prompt = " ".join(m["prompt_override"].split())
+    assert wai_prompt != " ".join(flux_prompt.split())
+    # o prompt do FLUX descreve a personagem; o do WAI, nao
+    assert mr.termos_especificos_no_prompt(flux_prompt)
+    assert mr.termos_especificos_no_prompt(wai_prompt) == []
+    razao = m["prompt_override_reason"]
+    assert "reutilizavel" in razao
 
 
 def test_notebook_orienta_o_diagnostico_das_tres_causas():
@@ -545,19 +563,21 @@ def test_denoise_e_menor_que_um_e_marcado_como_experimental():
 
 
 
-def test_prompt_manda_adaptar_e_nao_redesenhar():
-    """O prompt nao pode pedir uma personagem nova.
 
-    Em img2img um prompt que descreve uma personagem do zero compete
-    com a imagem de partida. Este manda ADAPTAR o design original.
+def test_prompt_descreve_estetica_e_nao_a_personagem():
+    """A transformacao vem do prompt; a identidade, da imagem.
+
+    Substitui o teste anterior, que exigia "preserve the same character
+    identity" no texto. Aquilo era contraditorio: pedir preservacao de
+    identidade EM TEXTO obriga a listar os atributos da personagem, que
+    e exatamente o que torna o prompt nao reutilizavel.
     """
     m = mr.get_model(KEY)
     prompt = " ".join(m["prompt_override"].split()).lower()
-    assert "input character" in prompt
-    assert "preserve the same character identity" in prompt
-    assert "adapt the original design" in prompt
-    assert "rather than redesigning" in prompt
-    assert m["prompt_mode"] == "img2img_adapt_not_redesign"
+    assert "chibi" in prompt and "super deformed" in prompt
+    assert mr.termos_especificos_no_prompt(prompt) == []
+    razao = m["prompt_override_reason"]
+    assert "imagem de entrada" in razao and "referencias" in razao
 
 
 def test_negativo_e_do_autor_do_checkpoint_e_esta_justificado():
@@ -571,13 +591,6 @@ def test_prompt_vem_do_registry_nao_do_notebook():
     assert 'PROMPT = " ".join(CFG["prompt_override"].split())' in _nb_source()
     assert 'NEGATIVE = CFG["negative_prompt_override"]' in _nb_source()
 
-
-def test_divergencia_de_prompt_com_o_flux_esta_declarada():
-    """WAI deixou de usar o base_prompt do FLUX — isso tem de estar escrito."""
-    razao = mr.get_model(KEY)["prompt_override_reason"]
-    assert "base_prompt" in razao
-    assert "FLUX" in razao
-    assert "CONSEQUENCIA REGISTRADA" in razao
 
 
 def test_sem_sweep_de_prompt_ou_seed():
@@ -1121,3 +1134,113 @@ def test_preflight_explica_como_trocar_para_gpu():
     assert "BLOCKED — a sessao esta em CPU" in src
     assert "Alterar o tipo de ambiente de execucao" in src
     assert "Nao ha fallback para CPU" in src
+
+
+# ----------------------------------------------------------------------
+# Prompt-base generico e reutilizavel
+# ----------------------------------------------------------------------
+
+# Atributos concretos da waifu_001 que estavam hardcoded no prompt-base.
+TERMOS_WAIFU_001 = [
+    "black hair", "red eyes", "horns", "black cape", "golden ornaments",
+    "long black cape", "outfit design", "costume structure",
+]
+
+
+def test_prompt_base_nao_descreve_a_waifu_001():
+    """O prompt-base tem de valer para qualquer personagem.
+
+    O prompt anterior listava "black hair, red eyes, horns, long black
+    cape, golden ornaments": util para uma waifu, inutil para as outras
+    99. Identidade e design vem da imagem de entrada e das referencias;
+    o prompt so descreve o alvo estetico.
+    """
+    m = mr.get_model(KEY)
+    for campo in ("prompt_override", "negative_prompt_override"):
+        texto = " ".join(m[campo].split()).lower()
+        for termo in TERMOS_WAIFU_001:
+            assert termo not in texto, f"{campo} contem {termo!r}"
+
+
+def test_registry_declara_o_prompt_como_generico():
+    m = mr.get_model(KEY)
+    assert m["prompt_type"] == "generic_chibi_base"
+    assert m["character_specific_prompt"] is False
+    assert m["prompt_mode"] == "generic_chibi_base"
+
+
+def test_prompt_base_descreve_o_alvo_estetico_chibi():
+    """Generico nao pode virar vago: o alvo chibi precisa estar la."""
+    prompt = " ".join(mr.get_model(KEY)["prompt_override"].split()).lower()
+    for termo in ("chibi", "super deformed", "large head", "small body",
+                  "short limbs", "full body"):
+        assert termo in prompt, termo
+
+
+def test_validador_rejeita_o_prompt_antigo_e_aceita_o_novo():
+    """A validacao precisa pegar o erro real que ja aconteceu."""
+    antigo = ("Transform the input character into a clean stylized chibi "
+              "character. Preserve the same character identity, black hair, "
+              "red eyes, horns, long black cape, golden ornaments.")
+    achados = mr.termos_especificos_no_prompt(antigo)
+    for esperado in ("black hair", "red eyes", "horns", "cape"):
+        assert esperado in achados, esperado
+    with pytest.raises(ValueError, match="termos especificos"):
+        mr.validar_prompt_generico(antigo)
+
+    novo = " ".join(mr.get_model(KEY)["prompt_override"].split())
+    assert mr.termos_especificos_no_prompt(novo) == []
+    mr.validar_prompt_generico(novo)  # nao levanta
+
+
+def test_validador_nao_bloqueia_vocabulario_legitimo_de_estilo():
+    """Falso positivo aqui seria pior que o bug: travaria prompts validos.
+
+    'detailed' contem 'tail', 'thorny' contem 'horn' — casamento por
+    substring simples quebraria nos dois.
+    """
+    for legitimo in (
+        "1girl, solo, full body, chibi, super deformed",
+        "clean lineart, simple cel shading, anime coloring",
+        "detailed shading, highly detailed",
+        "thorny background, standing, simple background",
+        "masterpiece, best quality, amazing quality",
+    ):
+        assert mr.termos_especificos_no_prompt(legitimo) == [], legitimo
+
+
+def test_notebook_valida_o_prompt_antes_de_executar():
+    """Registry limpo hoje nao impede alguem de sujar amanha."""
+    val = _celula_de_codigo("#@title 8.")
+    assert "termos_especificos_no_prompt" in val
+    assert "prompt-base generico" in val
+    assert "character_specific_prompt" in val
+
+
+def test_recipe_registra_que_o_prompt_e_generico():
+    rec = _celula_de_codigo("#@title 10.")
+    assert '"prompt_type": CFG["prompt_type"]' in rec
+    assert '"character_specific_prompt": CFG["character_specific_prompt"]' in rec
+
+
+def test_relatorio_nao_diz_que_o_prompt_preserva_atributos_da_personagem():
+    rel = _celula_de_codigo("#@title 13.")
+    assert "O prompt e generico" in rel
+    assert "nao descreve a personagem" in rel.replace("**", "")
+    assert "prompt_type" in rel
+
+
+def test_nenhum_termo_da_waifu_001_sobrou_no_notebook_do_wai():
+    """Auditoria: nao basta limpar a celula de configuracao."""
+    nb = json.loads(NB.read_text())
+    for i, c in enumerate(nb["cells"]):
+        if c["cell_type"] != "code":
+            continue
+        src = "".join(c["source"])
+        # a celula 13 cita os atributos ao explicar o erro corrigido
+        if src.startswith("#@title 13."):
+            continue
+        baixo = src.lower()
+        for termo in ("black hair", "red eyes", "long black cape",
+                      "golden ornaments"):
+            assert termo not in baixo, f"celula {i} contem {termo!r}"

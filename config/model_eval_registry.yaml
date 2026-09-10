@@ -562,29 +562,49 @@ models:
       O v1 (1 referencia via IP-Adapter, sem img2img) fica preservado no
       repositorio, sem uso nesta rodada.
 
-    prompt_mode: img2img_adapt_not_redesign
+    prompt_mode: generic_chibi_base
+    prompt_type: generic_chibi_base
+    character_specific_prompt: false
     prompt_override: >-
-      Transform the input character into a clean stylized game/gacha chibi
-      full-body character. Preserve the same character identity, face, black
-      hair, red eyes, horns, outfit design, long black cape, golden
-      ornaments, colors, and recognizable costume structure. Adapt the
-      original design naturally to chibi proportions rather than redesigning
-      the character.
+      1girl, solo, full body, chibi, super deformed, large head, small body,
+      short limbs, cute stylized anime character, clean lineart, simple cel
+      shading, anime coloring, standing, simple background, masterpiece,
+      best quality, amazing quality
     prompt_override_reason: >
-      CORRECAO desta rodada. O prompt anterior comecava com quality tags e
-      descrevia uma personagem, o que em img2img empurra o modelo a
-      REDESENHAR em vez de adaptar. Este prompt fala do "input character" e
-      manda adaptar a proporcao, nao reinventar o design — coerente com o
-      objetivo PERSONAGEM -> WAI -> CHIBI e com o eixo medido
-      (DESIGN_PRESERVATION). Continua curto, como o autor do checkpoint
-      recomenda. CONSEQUENCIA REGISTRADA: difere do `base_prompt` que o
-      FLUX usa, entao a comparacao de prompt nao e 1:1.
-    negative_prompt_override: "bad quality, worst quality, worst detail, sketch, watermark, signature, logo, text, multiple views"
+      CORRECAO: o prompt anterior descrevia a waifu_001 em texto ("black
+      hair, red eyes, horns, long black cape, golden ornaments"). Isso o
+      tornava inutilizavel para qualquer outra personagem — cada waifu nova
+      exigiria reescrever o prompt a mao, e o benchmark deixaria de produzir
+      uma recipe reutilizavel.
+      Separacao de responsabilidades da pipeline:
+        imagem de entrada + referencias -> identidade e design especificos
+        prompt                          -> transformacao estetica p/ chibi
+        IP-Adapter                      -> reforco visual da identidade
+        denoise                         -> quanto da estrutura pode mudar
+      O prompt nao deve tentar reconstruir a personagem em texto: essa
+      informacao ja esta no latente inicial (img2img) e nas referencias.
+      Este prompt-base descreve APENAS o alvo estetico (proporcao chibi,
+      lineart limpo, cel shading) e vale para waifu_001, waifu_002 e
+      qualquer personagem futura, sem edicao manual.
+      As quality tags do fim sao as declaradas pelo autor do checkpoint,
+      nao embelezamento nosso.
+    negative_prompt_override: >-
+      bad quality, worst quality, worst detail, sketch, watermark,
+      signature, logo, text, multiple views, realistic, photorealistic, 3d,
+      semi-realistic
     negative_prompt_reason: >
-      Curto, como o autor recomenda. Alem das tags de qualidade dele,
-      inclui supressao de watermark/assinatura/texto e de "multiple views"
-      (character sheet), que sao modos de falha comuns quando a imagem de
-      partida e uma splash art.
+      Tags de qualidade do autor, mais supressao de
+      watermark/assinatura/texto e de "multiple views" (character sheet),
+      modos de falha comuns quando a imagem de partida e uma splash art.
+      Os termos realistic/photorealistic/3d/semi-realistic afastam a saida
+      do fotorrealismo e reforcam o alvo 2D anime. Todos genericos: nenhum
+      descreve uma personagem especifica.
+    prompt_generic_note: >
+      Termos proibidos neste prompt-base: cor de cabelo, cor de olhos,
+      chifres, roupa, capa, acessorios, nome de personagem, cores
+      especificas. Ha teste automatico (test_wai_benchmark.py) que falha se
+      algum reaparecer. "1girl" e "solo" sao tags de composicao do dominio
+      Danbooru (quantidade de figuras no quadro), nao descricao de design.
 
     download_gb: 10.5
     download_estimated: true

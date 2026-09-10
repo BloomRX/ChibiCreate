@@ -730,3 +730,73 @@ def comparison_table(rows: list[dict[str, Any]]) -> str:
         "vencedor artistico.",
     ]
     return "\n".join(linhas)
+
+
+# ----------------------------------------------------------------------
+# Prompt-base generico
+# ----------------------------------------------------------------------
+
+# Termos que descrevem UMA personagem especifica. Um prompt-base que os
+# contenha deixa de ser reutilizavel: cada waifu nova exigiria reescreve-lo
+# a mao. Identidade e design vem da imagem de entrada e das referencias,
+# nunca do texto.
+#
+# A lista mira caracteristicas concretas de design, nao vocabulario de
+# estilo. Termos como "chibi", "cute", "anime coloring", "clean lineart" ou
+# "1girl" sao legitimos: descrevem o alvo estetico e a composicao do
+# quadro, valendo para qualquer personagem.
+TERMOS_ESPECIFICOS_DE_PERSONAGEM: tuple[str, ...] = (
+    # cor/atributo de cabelo e olhos
+    "black hair", "blonde hair", "blond hair", "white hair", "silver hair",
+    "pink hair", "blue hair", "red hair", "brown hair", "purple hair",
+    "green hair", "long hair", "short hair", "twintails", "ponytail",
+    "red eyes", "blue eyes", "green eyes", "golden eyes", "yellow eyes",
+    "purple eyes", "heterochromia",
+    # partes nao-humanas / acessorios de design
+    "horns", "horn", "wings", "tail", "cat ears", "animal ears", "elf ears",
+    "halo", "fangs",
+    # roupa e adornos
+    "cape", "cloak", "armor", "dress", "skirt", "kimono", "uniform",
+    "bikini", "swimsuit", "thighhighs", "stockings", "gloves", "boots",
+    "crown", "tiara", "golden ornament", "gold ornament", "ornaments",
+    "jewelry", "necklace", "earrings", "outfit design", "costume structure",
+    # cores aplicadas a design
+    "black outfit", "white outfit", "red dress", "gold trim",
+    # identificacao direta
+    "waifu_", "waifu 001", "character identity",
+)
+
+def termos_especificos_no_prompt(prompt: str) -> list[str]:
+    """Termos de personagem encontrados num prompt-base.
+
+    Retorna lista vazia quando o prompt e generico. Comparacao por
+    substring em minusculas, com fronteira de palavra quando o termo e
+    uma unica palavra curta — sem isso "horn" casaria dentro de
+    "thorny" e "tail" dentro de "detailed", que sao legitimos.
+    """
+    import re as _re
+
+    texto = " ".join(prompt.lower().split())
+    achados = []
+    for termo in TERMOS_ESPECIFICOS_DE_PERSONAGEM:
+        if " " in termo or termo.endswith("_"):
+            if termo in texto:
+                achados.append(termo)
+        elif _re.search(rf"\b{_re.escape(termo)}\b", texto):
+            achados.append(termo)
+    return sorted(set(achados))
+
+
+def validar_prompt_generico(prompt: str, *, contexto: str = "prompt") -> None:
+    """Falha se o prompt-base descrever uma personagem especifica.
+
+    Chamado pelo notebook antes de executar e pelos testes em CI.
+    """
+    achados = termos_especificos_no_prompt(prompt)
+    if achados:
+        raise ValueError(
+            f"BLOCKED — {contexto} contem termos especificos de personagem: "
+            f"{achados}. O prompt-base precisa valer para QUALQUER "
+            "personagem: identidade e design vem da imagem de entrada e das "
+            "referencias, nao do texto. Remova esses termos."
+        )

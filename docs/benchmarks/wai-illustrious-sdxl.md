@@ -128,26 +128,51 @@ Efeito colateral positivo: é o mesmo formato das saídas do FLUX, o que
 | VAE | integrado ao checkpoint | saída 2 do loader |
 | Hires fix | **desligado** | proibido nesta rodada |
 
-### Prompt: adaptar, não redesenhar
+### Prompt-base genérico e reutilizável
 
-O prompt anterior começava com quality tags e descrevia uma personagem. Em
-img2img isso é contraproducente: um prompt que descreve uma personagem do
-zero **compete** com a imagem de partida. O atual fala do "input character"
-e manda adaptar a proporção:
+O prompt-base **não descreve a personagem**. Separação de responsabilidades:
 
-> Transform the input character into a clean stylized game/gacha chibi
-> full-body character. Preserve the same character identity, face, black
-> hair, red eyes, horns, outfit design, long black cape, golden ornaments,
-> colors, and recognizable costume structure. Adapt the original design
-> naturally to chibi proportions rather than redesigning the character.
+| camada | responsabilidade |
+|---|---|
+| imagem de entrada (`VAEEncode`) | identidade e design específicos |
+| referências (IP-Adapter, Run 003) | reforço visual da identidade |
+| prompt | transformação estética para chibi |
+| denoise | quanto da estrutura original pode mudar |
 
-Negativo (curto, como o autor recomenda):
+Prompt-base:
+
+> 1girl, solo, full body, chibi, super deformed, large head, small body,
+> short limbs, cute stylized anime character, clean lineart, simple cel
+> shading, anime coloring, standing, simple background, masterpiece, best
+> quality, amazing quality
+
+Negativo:
 
 > bad quality, worst quality, worst detail, sketch, watermark, signature,
-> logo, text, multiple views
+> logo, text, multiple views, realistic, photorealistic, 3d, semi-realistic
 
-`watermark/signature/logo/text` e `multiple views` cobrem modos de falha
-comuns quando a imagem de partida é uma splash art.
+**Correção aplicada.** O prompt anterior listava `black hair, red eyes,
+horns, long black cape, golden ornaments` — atributos concretos da
+`waifu_001`. Servia para uma personagem e exigiria reescrita manual para
+cada nova, o que impede a recipe de ser reutilizável em 20, 50 ou 100+
+personagens. Pedir "preserve the same character identity" **em texto** é
+contraditório: obriga a enumerar os atributos, e é justamente o que o
+latente inicial e as referências já fornecem.
+
+`prompt_type: generic_chibi_base` e `character_specific_prompt: false`
+ficam registrados no recipe de cada run.
+
+#### Validação automática
+
+`model_registry.termos_especificos_no_prompt()` detecta atributos de
+personagem (cor de cabelo/olhos, chifres, roupa, capa, acessórios, nome).
+A célula 8 do notebook aborta antes de executar, e há teste em CI.
+
+O casamento usa fronteira de palavra para termos curtos — sem isso
+`detailed` casaria com `tail` e `thorny` com `horn`, bloqueando prompts
+legítimos. Vocabulário de estilo (`chibi`, `cute`, `clean lineart`,
+`anime coloring`, `1girl`, `solo`) é explicitamente permitido: descreve o
+alvo estético e a composição do quadro, não o design de uma personagem.
 
 ### `WaifuSurvivors_Concept.json` não é usado aqui
 
