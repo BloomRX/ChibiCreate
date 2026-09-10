@@ -419,6 +419,81 @@ models:
       prompt; registramos o fato porque afeta o comportamento do modelo e a
       adequacao ao projeto.
 
+  waifu_inpaint_xl:
+    role: local_inpaint_design_repair
+    display_name: Waifu-Inpaint-XL
+    repo: ShinoharaHare/Waifu-Inpaint-XL
+    source_url: https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL
+    revision: unknown
+    revision_note: >-
+      Revisao NAO registrada: o repositorio e gated e a API de metadados nao
+      responde sem token. A listagem publica mostra o commit
+      dd4c2b3ee244eb37b34d157204851f7503c372f8 para o upload do
+      safetensors, mas nao foi possivel confirmar via fonte primaria
+      autenticada. Preencher no aceite.
+    revision_date: unknown
+    architecture:
+      base: sdxl
+      unet_in_channels: 9
+      channels_note: >-
+        4 latente + 1 mascara + 4 latente mascarado. Exige
+        InpaintModelConditioning no ComfyUI; CheckpointLoaderSimple sozinho
+        nao alimenta os canais extras.
+      prediction_type: v_prediction
+      prediction_note: >-
+        Herdado do WAI V14.0-V-Prediction. Configuracao epsilon produz
+        imagem queimada.
+    lineage:
+      - KBlueLeaf/kohaku-xl-beta5
+      - OnomaAIResearch/Illustrious-xl-early-release-v0
+      - ShinoharaHare/WAI-NSFW-illustrious-SDXL-V14.0-V-Prediction
+      - ShinoharaHare/Waifu-Inpaint-XL
+    lineage_note: >-
+      NAO e o waiIllustriousSDXL_v170 do nosso benchmark. Linhagem, arquitetura
+      e licenca sao proprias e nao se misturam com as dele.
+    license:
+      spdx: CreativeML-OpenRAIL-M-plus-plus
+      name: CreativeML Open RAIL++-M
+      commercial_use: pending_human_review
+      verified: false
+      verified_on: null
+      technical_status: declared_by_model_card
+      commercial_status: pending_human_review
+      source_url: https://huggingface.co/ShinoharaHare/Waifu-Inpaint-XL
+      evidence: >-
+        Model card declara "License: CreativeML Open RAIL++-M" com link para a
+        licenca do stable-diffusion-xl-base-1.0. NAO confirmado em arquivo de
+        licenca dentro do repositorio: o gate impede acessar os arquivos. A
+        cadeia inclui Illustrious e WAI, cujos termos ja estao em revisao
+        neste repo; licenca nao se herda automaticamente por linhagem.
+    gated:
+      is_gated: true
+      gate_type: contact_information_sharing
+      note: >-
+        "You need to agree to share your contact information to access this
+        model." A listagem de arquivos e publica; o download exige login,
+        aceite manual e token. E um ato pessoal do operador — nao pode ser
+        automatizado nem contornado.
+      verified_on: "2026-09-10"
+      evidence: >-
+        GET em /resolve/main/model_index.json sem token retorna: "Access to
+        model ShinoharaHare/Waifu-Inpaint-XL is restricted. You must have
+        access to it and be authenticated to access it. Please log in."
+        Resposta do proprio HuggingFace, nao inferencia.
+    weights:
+      verified: false
+      files:
+        - Waifu-Inpaint-XL.safetensors
+      sha256: null
+      total_storage_bytes: 6940000000
+      total_storage_bytes_estimated: true
+      note: >-
+        Pesos NAO baixados: repositorio gated. 6.94 GB conforme a listagem
+        publica (nao conferido). O sha256 e calculado e impresso pela celula 4
+        de notebooks/waifu_inpaint_eval.ipynb assim que o arquivo estiver no
+        Drive; registrar aqui depois disso, junto com o tamanho real.
+    params: 3000000000
+
   sdxl_inpainting_01:
     role: masked_inpaint
     display_name: SD-XL Inpainting 0.1

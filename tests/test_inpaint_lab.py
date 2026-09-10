@@ -474,3 +474,54 @@ def test_prompt_com_termo_de_personagem_e_validado_na_celula_5():
     # so o positivo e validado: no negativo "horns" e legitimo
     assert "mr.termos_especificos_no_prompt(PROMPT)" in codigo
     assert "mr.termos_especificos_no_prompt(NEGATIVE)" not in codigo
+
+
+# ---------------------------------------------------------------------------
+# models.lock.yaml — registro formal do checkpoint
+# ---------------------------------------------------------------------------
+
+def _lock():
+    import yaml
+    return yaml.safe_load((ROOT / "config" / "models.lock.yaml").read_text())
+
+
+def test_inpaint_esta_no_models_lock():
+    assert "waifu_inpaint_xl" in _lock()["models"]
+
+
+def test_lock_nao_finge_que_os_pesos_foram_baixados():
+    """Gated: nao ha arquivo, logo nao ha sha256. Registrar o contrario
+    seria afirmar uma verificacao que nunca aconteceu."""
+    m = _lock()["models"]["waifu_inpaint_xl"]
+    assert m["weights"]["verified"] is False
+    assert m["weights"]["sha256"] is None
+    assert m["gated"]["is_gated"] is True
+
+
+def test_lock_nao_finge_licenca_verificada():
+    """O gate impede ler o arquivo de licenca dentro do repo; o model card
+    e fonte declarada, nao verificada."""
+    lic = _lock()["models"]["waifu_inpaint_xl"]["license"]
+    assert lic["verified"] is False
+    assert lic["commercial_status"] == "pending_human_review"
+    assert lic["name"] == "CreativeML Open RAIL++-M"
+
+
+def test_lock_registra_arquitetura_e_linhagem():
+    m = _lock()["models"]["waifu_inpaint_xl"]
+    assert m["architecture"]["unet_in_channels"] == 9
+    assert m["architecture"]["prediction_type"] == "v_prediction"
+    assert m["lineage"][-1] == "ShinoharaHare/Waifu-Inpaint-XL"
+    assert "WAI-NSFW-illustrious-SDXL-V14.0-V-Prediction" in m["lineage"][-2]
+
+
+def test_lock_nao_mistura_com_o_checkpoint_do_benchmark():
+    m = _lock()["models"]["waifu_inpaint_xl"]
+    assert "waiIllustriousSDXL_v170" in m["lineage_note"]
+    assert m["repo"] == "ShinoharaHare/Waifu-Inpaint-XL"
+
+
+def test_tamanho_declarado_esta_marcado_como_estimado():
+    """6.94 GB vem da listagem publica, nao de um arquivo conferido."""
+    w = _lock()["models"]["waifu_inpaint_xl"]["weights"]
+    assert w["total_storage_bytes_estimated"] is True
