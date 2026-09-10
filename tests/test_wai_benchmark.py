@@ -10,6 +10,8 @@ do benchmark FLUX que serve de baseline.
 """
 from __future__ import annotations
 
+import ast
+import builtins
 import json
 import re
 import sys
@@ -874,3 +876,97 @@ def test_celula_5_confere_o_checkpoint_do_drive():
     """A mesclagem nao pode ter comido o symlink."""
     src = _nb_source()
     assert "AUSENTE — reexecute a celula 4" in src
+
+
+# ----------------------------------------------------------------------
+# Coerencia entre celulas
+# ----------------------------------------------------------------------
+
+def _nomes_definidos(tree: ast.AST) -> set[str]:
+    """Nomes que uma celula passa a definir no namespace do notebook."""
+    nomes: set[str] = set()
+    for no in ast.walk(tree):
+        if isinstance(no, ast.Name) and isinstance(no.ctx, ast.Store):
+            nomes.add(no.id)
+        elif isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            nomes.add(no.name)
+        elif isinstance(no, (ast.Import, ast.ImportFrom)):
+            for a in no.names:
+                nomes.add((a.asname or a.name).split(".")[0])
+        elif isinstance(no, ast.ExceptHandler) and no.name:
+            nomes.add(no.name)
+        elif isinstance(no, (ast.For, ast.AsyncFor, ast.comprehension)):
+            alvo = no.target
+            for n in ast.walk(alvo):
+                if isinstance(n, ast.Name):
+                    nomes.add(n.id)
+        elif isinstance(no, ast.withitem) and no.optional_vars is not None:
+            for n in ast.walk(no.optional_vars):
+                if isinstance(n, ast.Name):
+                    nomes.add(n.id)
+        elif isinstance(no, (ast.Lambda, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            pass
+    return nomes
+
+
+def _nomes_usados(tree: ast.AST) -> set[str]:
+    locais: set[str] = set()
+    for no in ast.walk(tree):
+        if isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef,
+                           ast.Lambda)):
+            a = no.args
+            for arg in (a.posonlyargs + a.args + a.kwonlyargs +
+                        ([a.vararg] if a.vararg else []) +
+                        ([a.kwarg] if a.kwarg else [])):
+                locais.add(arg.arg)
+    return {no.id for no in ast.walk(tree)
+            if isinstance(no, ast.Name) and isinstance(no.ctx, ast.Load)
+            and no.id not in locais}
+
+
+def test_nenhuma_celula_usa_nome_que_ninguem_definiu_antes():
+    """Pega renomeacao aplicada numa celula e esquecida em outra.
+
+    Foi exatamente assim que a celula 3 quebrou em execucao real: a
+    celula 0 passou a chamar `REFS_CONSUMIDAS` e a 3 continuou pedindo
+    `REFS_DESTA_RUN`, que nao existia mais. Nenhum teste pegou porque
+    todos liam o notebook como texto. Este executa a analise de nomes na
+    ordem das celulas, que e a ordem em que o usuario roda.
+    """
+    nb = json.loads(NB.read_text())
+    disponiveis = set(dir(builtins)) | {"__name__", "get_ipython", "display"}
+    problemas = []
+    for i, c in enumerate(nb["cells"]):
+        if c["cell_type"] != "code":
+            continue
+        src = "".join(c["source"])
+        # Linhas magicas do Colab nao sao Python valido. Viram `pass` com
+        # a mesma indentacao: apagar a linha quebraria blocos indentados.
+        limpo = "\n".join(
+            (" " * (len(l) - len(l.lstrip())) + "pass")
+            if l.lstrip().startswith(("!", "%")) else l
+            for l in src.split("\n"))
+        try:
+            tree = ast.parse(limpo)
+        except SyntaxError as e:  # pragma: no cover
+            pytest.fail(f"celula {i} nao compila: {e}")
+        # A propria celula conta: o que importa e o nome existir quando a
+        # celula termina, nao a ordem das linhas dentro dela.
+        disponiveis |= _nomes_definidos(tree)
+        for nome in sorted(_nomes_usados(tree) - disponiveis):
+            problemas.append(
+                f"celula {i}: usa '{nome}', que nenhuma celula define")
+    assert not problemas, "\n".join(problemas)
+
+
+def test_celula_de_referencias_usa_full_body_como_imagem_de_partida():
+    """A celula 3 nao pode tratar full_body como opcional."""
+    src = _celula_de_codigo("#@title 3.")
+    assert "REFS_CONSUMIDAS" in src
+    assert "REFS_DESTA_RUN" not in src, "nome antigo, removido"
+    assert "SRC_W, SRC_H" in src
+    assert "imagem inicial do img2img" in src
+    # papel duplo aparece so na 003
+    assert "ipadapter_reference" in src
