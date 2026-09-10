@@ -26,7 +26,8 @@ from chibi import experiment  # noqa: E402
 
 NB = ROOT / "notebooks" / "wai_illustrious_sdxl_eval.ipynb"
 WF_DIR = ROOT / "workflows" / "experimental" / "wai_illustrious_ipadapter"
-WF = WF_DIR / "v1.json"     # 1 referencia  (runs 001/002)
+WF0 = WF_DIR / "v0.json"    # baseline txt2img (runs 001/002)
+WF = WF_DIR / "v1.json"     # 1 referencia via IP-Adapter (sem uso)
 WF2 = WF_DIR / "v2.json"    # 3 referencias (run 003)
 KEY = "wai_illustrious_sdxl_v170"
 
@@ -260,11 +261,149 @@ def test_notebook_para_se_faltar_referencia_da_run():
     assert "nunca cai para uma referencia em silencio" in " ".join(src.split())
 
 
-def test_notebook_registra_referencias_usadas_e_nao_usadas():
+# ----------------------------------------------------------------------
+# BASELINE WAI PURO (v0) — diagnostico do checkpoint
+# ----------------------------------------------------------------------
+
+def test_baseline_e_txt2img_so_com_nodes_core():
+    """A Run 001 mede o CHECKPOINT. Qualquer extra invalida o diagnostico."""
+    core = {"CheckpointLoaderSimple", "CLIPTextEncode", "EmptyLatentImage",
+            "KSampler", "VAEDecode", "SaveImage"}
+    classes = {v["class_type"] for v in _nodes(WF0).values()}
+    assert classes == core, classes ^ core
+
+
+def test_baseline_nao_tem_ipadapter_lora_controlnet_nem_hires():
+    classes = {v["class_type"] for v in _nodes(WF0).values()}
+    for termo in ("IPAdapter", "Lora", "ControlNet", "Upscale", "Hires",
+                  "LoadImage", "VAEEncode"):
+        assert not any(termo in c for c in classes), termo
+
+
+def test_baseline_usa_o_vae_integrado_do_checkpoint():
+    """'VAE integrado' = saida 2 do CheckpointLoaderSimple, sem VAELoader."""
+    n = _nodes(WF0)
+    dec = next(v for v in n.values() if v["class_type"] == "VAEDecode")
+    assert dec["inputs"]["vae"] == ["1", 2]
+    assert not any(v["class_type"] == "VAELoader" for v in n.values())
+
+
+def test_baseline_declara_que_nao_consome_referencia():
+    """A referencia nao pode sumir em silencio: tem de ficar registrada."""
+    g = json.loads(WF0.read_text())
+    assert g["_reference_count"] == 0
+    assert g["_baseline"] is True
+    assert "txt2img" in g["_comment"]
+
     src = _nb_source()
-    assert '"references_used": REFS_DESTA_RUN' in src
-    assert '"references_not_used"' in src
-    assert '"reference_count"' in src
+    assert "REFS_CONSUMIDAS = REFS_DECLARADAS if IS_RUN_003 else []" in src
+    assert '"references_declared": REFS_DECLARADAS' in src
+    assert '"references_consumed": REFS_CONSUMIDAS' in src
+    assert "declarada mas NAO consumida" in src
+
+
+def test_runs_001_002_pulam_a_instalacao_do_ipadapter():
+    src = _nb_source()
+    assert "Run\", RUN_ID, \"= baseline puro: IP-Adapter NAO e usado." in src
+    assert "IPADAPTER_META = None" in src
+
+
+def test_parametros_seguem_a_recomendacao_do_autor():
+    p = mr.get_model(KEY)["parameters"]
+    assert p["steps"] == 20          # faixa do autor: 15-30
+    assert p["cfg"] == 6.0           # faixa do autor: 5-7
+    assert p["sampler"] == "euler_ancestral"   # "Euler a"
+    assert p["resolution"] == [1024, 1344]     # exemplo do autor
+    assert p["seed"] == 42
+    assert p["batch"] == 1
+    assert p["denoise"] == 1.0
+    assert p["hires_fix"] is False   # proibido nesta rodada
+    assert p["scheduler"] == "normal"
+    assert p["scheduler_note"].strip()   # escolha nossa, declarada
+    assert p["parameters_source"].strip()
+
+
+def test_prompt_e_curto_conforme_o_autor():
+    """O autor avisa que prompt longo e excesso de tags PIORAM o resultado."""
+    m = mr.get_model(KEY)
+    assert m["prompt_mode"] == "short_author_recommended"
+    prompt = " ".join(m["prompt_override"].split())
+    assert prompt.startswith("masterpiece, best quality, amazing quality,")
+    assert len(prompt) < 350, f"prompt longo demais: {len(prompt)}"
+    # Elementos de design do benchmark preservados.
+    for termo in ("black hair", "red eyes", "horns", "cape",
+                  "golden ornaments", "chibi"):
+        assert termo in prompt, termo
+    # Negativo curto, sem acrescimos.
+    assert (m["negative_prompt_override"]
+            == "bad quality, worst quality, worst detail, sketch, censor")
+    assert m["prompt_override_reason"].strip()
+
+
+def test_mudanca_de_prompt_e_resolucao_esta_documentada_como_limitacao():
+    """Divergir do FLUX enfraquece a comparacao: tem de estar escrito."""
+    m = mr.get_model(KEY)
+    assert "LIMITACAO REGISTRADA" in m["parameters"]["resolution_note"]
+    assert "1024x1024" in m["parameters"]["resolution_note"]
+    assert "CONSEQUENCIA REGISTRADA" in m["prompt_override_reason"]
+    src = _nb_source()
+    assert "WAI gera 1024x1344; FLUX gera 1024x1024." in src
+    assert "Os prompts diferem" in src
+
+
+def test_notebook_orienta_o_diagnostico_das_tres_causas():
+    src = _nb_source()
+    assert "IP-Adapter esta INOCENTE" in src
+    assert "causa (A)" in src and "causa (B)" in src and "causa (C)" in src
+    assert "UM fator por vez" in src
+
+
+def test_erro_registra_a_etapa_exata():
+    src = _nb_source()
+    assert "ERRO_ETAPA = \"submissao_do_grafo\"" in src
+    assert "ERRO_ETAPA = \"execucao_do_grafo\"" in src
+    assert "BLOCKED na etapa" in src
+
+
+# ----------------------------------------------------------------------
+# ZIP de resultados — entrega obrigatoria
+# ----------------------------------------------------------------------
+
+def test_zip_com_nome_exato_e_download():
+    src = _nb_source()
+    assert "wai_illustrious_eval_results.zip" in src
+    assert "from google.colab import files" in src
+    assert "files.download(str(ZIP_PATH))" in src
+    # Caminho impresso mesmo se o download automatico falhar.
+    assert "Baixe pelo painel de arquivos a esquerda:" in src
+
+
+def test_zip_inclui_tudo_que_foi_pedido():
+    src = _nb_source()
+    for item in ("output.png", "recipe.json", "workflow.resolved.json",
+                 "logs", "comparison.png", "RELATORIO.md", "hashes.json"):
+        assert item in src, item
+
+
+def test_workflow_resolvido_e_gravado_com_os_valores_reais():
+    """O grafo COM substituicoes e o que de fato rodou."""
+    src = _nb_source()
+    assert '(RUN_DIR / "workflow.resolved.json").write_text(' in src
+    assert "json.dumps(GRAFO, indent=2)" in src
+
+
+def test_cada_run_tem_diretorio_proprio_sem_mistura():
+    src = _nb_source()
+    assert 'f"/content/ChibiCreate/experiments/model_eval/{MODEL_KEY}/run_{RUN_ID}"' in src
+    assert "[no overwrite]" in src
+
+
+def test_notebook_registra_referencias_declaradas_e_consumidas():
+    """Declarada != consumida: no baseline a diferenca e o ponto principal."""
+    src = _nb_source()
+    assert '"references_declared": REFS_DECLARADAS' in src
+    assert '"references_consumed": REFS_CONSUMIDAS' in src
+    assert '"reference_count": len(REFS_CONSUMIDAS)' in src
 
 
 # ----------------------------------------------------------------------
@@ -336,7 +475,10 @@ def test_seed_42_e_batch_1():
 
 
 def test_resolucao_explicita_e_compativel_com_sdxl():
-    assert mr.get_model(KEY)["parameters"]["resolution"] == [1024, 1024]
+    """1024x1344: exemplo do autor, acima do nativo 1024x1024."""
+    r = mr.get_model(KEY)["parameters"]["resolution"]
+    assert r == [1024, 1344]
+    assert r[0] % 64 == 0 and r[1] % 64 == 0, "SDXL exige multiplo de 64"
 
 
 def test_denoise_decorre_do_pipeline_e_esta_justificado():
@@ -347,13 +489,18 @@ def test_denoise_decorre_do_pipeline_e_esta_justificado():
     assert "EmptyLatentImage" in p["denoise_note"]
 
 
-def test_prompt_nao_foi_embelezado_para_o_wai():
-    """Nenhum prefixo de qualidade. Isso inflaria o candidato."""
-    m = mr.get_model(KEY)
-    assert m["prompt_override_prefix"] == ""
-    assert "masterpiece" not in m["prompt_override_prefix"].lower()
-    assert "best quality" not in m["prompt_override_prefix"].lower()
-    assert m["prompt_override_reason"].strip()
+def test_quality_tags_sao_as_do_autor_e_em_quantidade_minima():
+    """As tags do autor sao permitidas; o EXCESSO e que e proibido.
+
+    O proprio autor pede 'masterpiece, best quality, amazing quality' e
+    avisa contra acrescentar mais. Nao e embelezamento nosso: e o formato
+    documentado do checkpoint.
+    """
+    prompt = " ".join(mr.get_model(KEY)["prompt_override"].split()).lower()
+    assert prompt.startswith("masterpiece, best quality, amazing quality,")
+    for extra in ("ultra detailed", "8k", "photorealistic", "award winning",
+                  "absurdres", "highres", "perfect anatomy"):
+        assert extra not in prompt, f"quality tag em excesso: {extra}"
 
 
 def test_negativo_e_do_autor_do_checkpoint_e_esta_justificado():
@@ -362,17 +509,18 @@ def test_negativo_e_do_autor_do_checkpoint_e_esta_justificado():
     assert m["negative_prompt_reason"].strip()
 
 
-def test_prompt_base_vem_do_registry_compartilhado():
-    """O prompt tem de ser o MESMO do benchmark FLUX."""
-    base = mr.load_registry()["base_prompt"].lower()
-    # Os elementos de design que o benchmark mede.
-    for termo in ("chibi", "horns", "cape", "golden ornaments",
-                  "clothing", "accessories", "identity"):
-        assert termo in base, termo
-    # E a instrucao antideriva, que e o coracao do teste.
-    assert "do not redesign" in base
-    # O notebook consome esse prompt do registry, nao um proprio.
-    assert 'PROMPT = " ".join(_reg["base_prompt"].split())' in _nb_source()
+def test_prompt_vem_do_registry_nao_do_notebook():
+    """O prompt e versionado no registry, nao digitado no notebook."""
+    assert 'PROMPT = " ".join(CFG["prompt_override"].split())' in _nb_source()
+    assert 'NEGATIVE = CFG["negative_prompt_override"]' in _nb_source()
+
+
+def test_divergencia_de_prompt_com_o_flux_esta_declarada():
+    """WAI deixou de usar o base_prompt do FLUX — isso tem de estar escrito."""
+    razao = mr.get_model(KEY)["prompt_override_reason"]
+    assert "base_prompt" in razao
+    assert "FLUX" in razao
+    assert "CONSEQUENCIA REGISTRADA" in razao
 
 
 def test_sem_sweep_de_prompt_ou_seed():
@@ -445,13 +593,11 @@ def test_runs_001_e_002_usam_o_mesmo_workflow_e_a_mesma_referencia():
     m = mr.get_model(KEY)
     w = m["workflows"]
     assert w["run_001"] == w["run_002"]
-    assert w["run_001"].endswith("@v1")
+    assert w["run_001"].endswith("@v0"), "001/002 usam o BASELINE puro"
     assert w["run_003"].endswith("@v2")
 
     src = _nb_source()
-    assert 'WORKFLOW_VERSION = "v2" if IS_RUN_003 else "v1"' in src
-    assert ('REFS_DESTA_RUN = (["full_body", "face", "outfit"] if IS_RUN_003'
-            in src)
+    assert 'WORKFLOW_VERSION = "v2" if IS_RUN_003 else "v0"' in src
 
 
 def test_notebook_compara_as_entradas_da_001_e_002():
@@ -476,21 +622,53 @@ def test_entradas_sao_lidas_nao_modificadas():
     celula3 = src.split("#@title 3.")[1].split("#@title 4.")[0]
     assert ".write_bytes(" not in celula3
     # A copia para o input do ComfyUI le a origem e escreve so no destino.
-    assert "(COMFY_INPUT / nome).write_bytes(origem.read_bytes())" in src
+    assert "(COMFY_INPUT / nome).write_bytes(origem_ref.read_bytes())" in src
 
 
 def test_nao_ha_ranking_automatico():
     src = _nb_source()
     assert "[HUMAN REVIEW REQUIRED]" in src
-    assert "nao ha ranking automatico" in src.lower()
+    assert "sem ranking automatico" in src.lower()
     assert "DESIGN_PRESERVATION" in src
+
+
+def test_avalia_limpeza_tecnica_antes_do_julgamento_artistico():
+    src = _nb_source()
+    assert "PRIMEIRO: a imagem esta tecnicamente limpa?" in src
+    assert "sem artefato cromatico" in src
 
 
 def test_montagem_comparativa_tem_os_cinco_paineis():
     src = _nb_source()
-    for rotulo in ("ORIGINAL", "FLUX RUN 001", "FLUX RUN 003",
-                   "WAI RUN 001", "WAI RUN 003"):
+    for rotulo in ("ORIGINAL", "FLUX RUN 003", "WAI RUN 001",
+                   "WAI RUN 002", "WAI RUN 003"):
         assert rotulo in src, rotulo
+
+
+def test_nao_reexecuta_o_flux_dentro_deste_notebook():
+    """A run_003 do FLUX entra como imagem JA EXISTENTE, so leitura.
+
+    Testa o codigo, nao a prosa: mencionar o FLUX no texto e desejavel;
+    carregar o modelo ou submeter um grafo dele e que seria violacao.
+    """
+    nb = json.loads(NB.read_text())
+    codigo = "\n".join("".join(c["source"]) for c in nb["cells"]
+                        if c["cell_type"] == "code")
+    # Nenhum peso/loader do FLUX e carregado aqui.
+    for proibido in ("FluxGuidance", "UNETLoader", "DualCLIPLoader",
+                     "flux1-", "t5xxl", "ae.safetensors"):
+        assert proibido not in codigo, proibido
+
+    # O nome do FLUX so pode aparecer em string (rotulo, relatorio,
+    # nome do benchmark) ou lendo o PNG pronto — nunca como chamada.
+    for linha in codigo.split("\n"):
+        low = linha.lower()
+        if "flux" not in low:
+            continue
+        e_string = ('"' in linha or "'" in linha)
+        assert e_string, f"uso do FLUX fora de string: {linha.strip()}"
+        assert "urlopen" not in low and "subprocess" not in low, (
+            f"execucao envolvendo FLUX: {linha.strip()}")
 
 
 def test_montagem_rotula_os_mecanismos_distintos():
@@ -540,10 +718,12 @@ def test_nao_toca_no_baseline_flux():
         "notebooks/flux2_klein_4b_eval.ipynb`", "")  # so a mencao no cabecalho
     for proibido in ("os.remove",):
         assert proibido not in src, proibido
-    # rmtree so pode tocar no clone temporario do ComfyUI.
+    # rmtree so em diretorios de trabalho nossos (clone temporario do
+    # ComfyUI e staging do ZIP), nunca no Drive nem no repositorio.
     for linha in src.split("\n"):
         if "shutil.rmtree" in linha:
-            assert "tmp" in linha, f"rmtree fora do clone temporario: {linha.strip()}"
+            assert any(t in linha for t in ("tmp", "STAGE")), (
+                f"rmtree fora de diretorio de trabalho: {linha.strip()}")
     # A run_003 do FLUX so pode ser LIDA na montagem comparativa.
     for linha in src.split("\n"):
         if "run_003_output.png" in linha:

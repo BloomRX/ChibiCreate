@@ -2,10 +2,80 @@
 
 **Status:** preparado, NÃO executado · **Tipo:** benchmark comparativo · **Não é pipeline oficial**
 
-> **Correção aplicada nesta rodada.** A versão anterior deste benchmark
-> tratava "SDXL não tem multi-referência nativa" como se fosse "SDXL não
-> consegue usar múltiplas referências". São coisas distintas: o IP-Adapter
-> fornece multi-referência real, e a Run 003 agora usa as três referências.
+> **Correção desta rodada.** O resultado anterior saiu com artefatos. Antes
+> de culpar o modelo ou o IP-Adapter, as Runs 001/002 passam a ser um
+> **baseline WAI puro** (txt2img, só nodes Core), com os parâmetros do
+> próprio autor do v17.0. O objetivo é diagnóstico: separar **(A)**
+> configuração incorreta de **(B)** WAI + IP-Adapter e de **(C)** WAI
+> funcionando mas artisticamente inferior ao FLUX.
+
+## Diagnóstico: três causas, uma de cada vez
+
+| observação | causa | conclusão |
+|---|---|---|
+| Run 001 já suja | **(A)** configuração / checkpoint | IP-Adapter **inocente** — nem participou |
+| 001 limpa, 003 suja | **(B)** WAI + IP-Adapter | investigar um fator por vez |
+| ambas limpas | **(C)** questão artística | comparar com o FLUX |
+
+As Runs 001/002 usam o workflow `v0`: `CheckpointLoaderSimple` →
+`CLIPTextEncode` ×2 → `EmptyLatentImage` → `KSampler` → `VAEDecode` →
+`SaveImage`. Nada mais. Sem IP-Adapter, ControlNet, LoRA, Hires ou
+ADetailer — qualquer extra invalidaria o diagnóstico.
+
+### `full_body` é declarada, mas não consumida
+
+Ponto que precisa ficar explícito: o pedido diz "Run 001 com uma referência:
+`full_body`", mas também proíbe IP-Adapter. **Sem IP-Adapter o SDXL não tem
+por onde receber uma imagem de referência** — e com `denoise 1.0` um img2img
+descartaria o latente de qualquer forma.
+
+Então a Run 001 é txt2img e o recipe registra os dois campos separados:
+
+```
+references_declared: ["full_body"]
+references_consumed: []
+```
+
+A referência não é omitida em silêncio. A Run 001 mede **o checkpoint**, não
+a fidelidade à imagem.
+
+### Parâmetros do autor do v17.0
+
+| | valor | origem |
+|---|---|---|
+| steps | 20 | meio da faixa do autor (15–30) |
+| CFG | 6.0 | meio da faixa do autor (5–7) |
+| sampler | `euler_ancestral` | "Euler a" do A1111 |
+| scheduler | `normal` | **escolha nossa** — o autor não declara |
+| resolução | **1024×1344** | exemplo do autor (nativo > 1024²) |
+| denoise | 1.0 | txt2img |
+| VAE | integrado ao checkpoint | saída 2 do loader |
+| Hires fix | **desligado** | proibido nesta rodada |
+
+Antes usávamos 30 steps / CFG 7.0 (topo da faixa) e 1024×1024. **Gerar
+abaixo da resolução nativa é causa conhecida de artefato em SDXL**, então
+1024×1024 era candidato real a explicar o resultado ruim.
+
+### Prompt curto
+
+O autor avisa que excesso de quality tags e negativos longos **reduzem** a
+qualidade em modelos Illustrious. Trocamos o `base_prompt` de 906 caracteres
+(compartilhado com o FLUX) pelo formato recomendado:
+
+> `masterpiece, best quality, amazing quality, clean polished stylized chibi full-body character, preserve the same character identity, black hair, red eyes, horns, black outfit, long black cape and golden ornaments, cute game/gacha chibi character, full body, centered composition`
+
+Negativo: `bad quality, worst quality, worst detail, sketch, censor`
+
+### Limitações registradas
+
+Duas assimetrias novas em relação ao FLUX, declaradas em vez de escondidas:
+
+1. **Resolução:** WAI gera 1024×1344, FLUX gera 1024×1024.
+2. **Prompt:** deixaram de ser idênticos.
+
+Ambas enfraquecem a comparação direta — mas são necessárias para responder
+primeiro "o checkpoint funciona?". As imagens de referência **não** foram
+alteradas.
 
 ## A pergunta
 
@@ -177,11 +247,11 @@ Civitai. Sem sweep de prompt e sem sweep de seed.
 
 ## Runs
 
-| run | referências | workflow | o que testa |
+| run | workflow | refs consumidas | o que testa |
 |---|---|---|---|
-| 001 | `full_body` | `v1` | linha de base |
-| 002 | `full_body` | `v1` | reprodutibilidade — repetição exata da 001 |
-| 003 | `full_body` + `face` + `outfit` | `v2` | multi-referência via IP-Adapter |
+| 001 | `v0` | — (txt2img) | **o checkpoint funciona?** |
+| 002 | `v0` | — (txt2img) | reprodutibilidade — repetição exata da 001 |
+| 003 | `v2` | `full_body` + `face` + `outfit` | multi-referência via IP-Adapter |
 
 Pesos da Run 003 — **BASELINE EXPERIMENTAL**, não validados:
 
@@ -209,8 +279,16 @@ determinismo absoluto.
 4. **Célula 2** — preflight. Se `BLOCKED`, **pare**: sem fallback silencioso.
 5. **Célula 4** — montar o Drive e validar o checkpoint. Autorize o acesso
    quando o Colab pedir; ajuste `CKPT_DRIVE_PATH` se o seu caminho diferir.
-6. **Célula 6** — marcar `ACEITO_INSTALAR_IPADAPTER` (custom node + 2 pesos).
-7. Células 7→12 em ordem.
+6. **Célula 6** — só para a Run 003: marcar `ACEITO_INSTALAR_IPADAPTER`.
+   Nas Runs 001/002 ela se autodesativa e não instala nada.
+7. Células 7→13 em ordem.
+
+Rode a **Run 001 primeiro** e olhe a imagem. Se já vier com artefatos, pare:
+a causa é **(A)** e o IP-Adapter não tem culpa. Só siga para a 003 se a 001
+estiver limpa.
+
+Ao final, a **célula 13** gera `wai_illustrious_eval_results.zip` em
+`/content/` e dispara o download.
 
 Para as três runs: repita as células 8→10 mudando `RUN` na célula 0. A
 célula 11 compara 001 × 002; a 12 monta a comparação final.
@@ -246,9 +324,10 @@ WAI mostrar vantagem real em DESIGN_PRESERVATION.
 ## Arquivos
 
 - `notebooks/wai_illustrious_sdxl_eval.ipynb` — o benchmark
-- `workflows/experimental/wai_illustrious_ipadapter/v1.json` — 1 referência
+- `workflows/experimental/wai_illustrious_ipadapter/v0.json` — **baseline puro** (runs 001/002)
+- `workflows/experimental/wai_illustrious_ipadapter/v1.json` — 1 referência via IP-Adapter (sem uso nesta rodada)
 - `workflows/experimental/wai_illustrious_ipadapter/v2.json` — 3 referências
 - `workflows/experimental/wai_illustrious_chibi/v1.json` — rota img2img anterior, mantida
 - `config/model_eval_registry.yaml` → `wai_illustrious_sdxl_v170`
 - `config/models.lock.yaml` → `wai_illustrious_sdxl_v170` (`MODEL_MISSING`)
-- `tests/test_wai_benchmark.py` — 77 testes
+- `tests/test_wai_benchmark.py` — 100 testes
