@@ -419,6 +419,54 @@ models:
       prompt; registramos o fato porque afeta o comportamento do modelo e a
       adequacao ao projeto.
 
+  sdxl_inpainting_01:
+    role: masked_inpaint
+    display_name: SD-XL Inpainting 0.1
+    repo: diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+    source_url: https://huggingface.co/diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+    revision: 115134f363124c53c7d878647567d04daf26e41e
+    revision_date: "2023-09-03T16:36:39.000Z"
+    created_at: "2023-09-01T14:07:10.000Z"
+    base_model: stabilityai/stable-diffusion-xl-base-1.0
+    license:
+      name: CreativeML Open RAIL++-M
+      url: https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENSE.md
+      verified: true
+      verified_at: "2026-09-09"
+      commercial: allowed_with_use_restrictions
+      note: >
+        Permite uso comercial, mas anexa lista de usos proibidos que precisa
+        ser propagada a jusante. [HUMAN REVIEW REQUIRED] antes de distribuir.
+    weights:
+      verified: false
+      note: "Nao baixado. Download e explicito no notebook, nunca automatico."
+      files:
+        - unet/diffusion_pytorch_model.fp16.safetensors
+        - text_encoder/model.fp16.safetensors
+        - text_encoder_2/model.fp16.safetensors
+        - vae/diffusion_pytorch_model.fp16.safetensors
+    requirements:
+      params: 3B
+      native_resolution: 1024
+      vram_fp16_gb: 8.0
+      variant: fp16
+      fits_colab_t4: true
+      note: "T4 tem 15 GB; ~8 GB em fp16 cabe com folga. Sem bf16 nativo."
+    parameters:
+      guidance_scale: 8.0
+      num_inference_steps: 20
+      strength: 0.85
+      seed: 42
+      note: >
+        strength < 1.0 e exigencia do model card: em 1.0 a qualidade degrada.
+        steps 15-30 conforme recomendacao oficial.
+    usage: >
+      FASE B do design transfer. Edita SOMENTE dentro da mascara transformada
+      para o espaco da Run 003. Nunca recebe a imagem inteira para redesenhar
+      a personagem. Nao substitui o FLUX nem o Flow 01.
+    approval_status: experimental
+
+
 
 # Modelos explicitamente REJEITADOS para dependencia comercial.
 rejected:
