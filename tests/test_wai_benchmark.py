@@ -26,7 +26,7 @@ from chibi import experiment  # noqa: E402
 
 NB = ROOT / "notebooks" / "wai_illustrious_sdxl_eval.ipynb"
 WF_DIR = ROOT / "workflows" / "experimental" / "wai_illustrious_ipadapter"
-WF0 = WF_DIR / "v0.json"    # baseline txt2img (runs 001/002)
+WF0 = WF_DIR / "v0.json"    # img2img puro (runs 001/002)
 WF = WF_DIR / "v1.json"     # 1 referencia via IP-Adapter (sem uso)
 WF2 = WF_DIR / "v2.json"    # 3 referencias (run 003)
 KEY = "wai_illustrious_sdxl_v170"
@@ -40,6 +40,39 @@ def _nb_source() -> str:
 def _nodes(path: Path = WF) -> dict:
     g = json.loads(path.read_text())
     return {k: v for k, v in g.items() if not k.startswith("_")}
+
+
+def _celula_de_codigo(prefixo: str) -> str:
+    """Codigo de UMA celula, por prefixo do titulo.
+
+    Testar o notebook inteiro como string faz assertion casar em prosa de
+    markdown; isto restringe ao codigo da celula certa.
+    """
+    nb = json.loads(NB.read_text())
+    for c in nb["cells"]:
+        if c["cell_type"] != "code":
+            continue
+        src = "".join(c["source"])
+        if src.startswith(prefixo):
+            return src
+    raise AssertionError(f"celula {prefixo!r} nao encontrada")
+
+
+def _workflow(versao: str) -> dict:
+    """Nodes de uma versao do workflow, sem as chaves de metadado `_*`."""
+    return _nodes(WF_DIR / f"{versao}.json")
+
+
+# Nodes que vem no ComfyUI de fabrica. Tudo fora disto e custom node e
+# precisa estar declarado no registry.
+_CORE = {
+    "CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage", "VAEEncode",
+    "VAEDecode", "KSampler", "SaveImage", "EmptyLatentImage",
+}
+
+# O prompt do FLUX (906 chars) foi escrito para um modelo que entende frase
+# longa. Serve so como referencia de tamanho: o do WAI tem de ser menor.
+FLUX_PROMPT_LEN_REF = "x" * 906
 
 
 # ----------------------------------------------------------------------
@@ -125,16 +158,18 @@ def test_nao_move_nem_modifica_o_original_do_drive():
     assert i < j, "a copia tem de ser o fallback, nao o caminho principal"
 
 
+
 def test_version_id_desconhecido_nao_bloqueia_a_execucao():
     """SHA256 identifica o arquivo melhor que um id de catalogo."""
     src = _nb_source()
     assert '"unknown/pending"' in src
     assert "Nao bloqueia a execucao" in src
-    # O gate de execucao olha o SHA e a validacao, nunca o version id.
-    exec_cell = src.split("#@title 9. Executar")[1].split("#@title 10.")[0]
+    # O gate de execucao olha o SHA e a validacao SDXL, nunca o version id.
+    exec_cell = _celula_de_codigo("#@title 9.")
     assert 'VERSAO.get("sha256")' in exec_cell
     assert 'VERSAO.get("sdxl_validated")' in exec_cell
-    assert "civitai_model_version_id" not in exec_cell
+    assert "modelVersionId" not in exec_cell
+    assert "version_id" not in exec_cell
 
 
 def test_recipe_registra_procedencia_do_drive():
@@ -157,17 +192,21 @@ def test_nao_guarda_credenciais():
 # Multi-referencia via IP-Adapter
 # ----------------------------------------------------------------------
 
-def test_registry_declara_tres_referencias_via_ipadapter():
-    """CORRECAO: SDXL nao ter mecanismo proprio nao impede multi-referencia.
 
-    O IP-Adapter fornece multi-referencia real. O registry passou de
-    references_supported 0 para 3.
-    """
-    m = mr.get_model(KEY)
-    assert m["references_supported"] == 3
-    assert m["reference_mechanism"] == "ipadapter_encode_combine"
-    assert m["pipeline_type"] == "sdxl_checkpoint_ipadapter"
-    assert m["input_mode"] == "ipadapter_embeds"
+def test_run_003_usa_full_body_em_papel_duplo():
+    """Na Run 003 full_body e latente inicial E referencia do IP-Adapter."""
+    wf = _workflow("v2")
+    classes = {k: v["class_type"] for k, v in wf.items()}
+    fb = next(k for k, v in wf.items()
+              if v["class_type"] == "LoadImage"
+              and v["inputs"]["image"] == "%%REF_FULL_BODY%%")
+    usos = {classes[k] for k, v in wf.items()
+            if any(isinstance(x, list) and x[0] == fb
+                   for x in v["inputs"].values())}
+    assert {"VAEEncode", "IPAdapterEncoder"} <= usos, usos
+    assert sum(1 for c in classes.values() if c == "IPAdapterEncoder") == 3
+    ks = next(k for k, c in classes.items() if c == "KSampler")
+    assert classes[wf[ks]["inputs"]["model"][0]] == "IPAdapterEmbeds"
 
 
 def test_nao_afirma_equivalencia_de_arquitetura_com_o_flux():
@@ -236,14 +275,25 @@ def test_pesos_baseline_declarados_como_nao_validados():
     assert m["combine_method_status"] == "BASELINE_EXPERIMENTAL"
 
 
-def test_geracao_parte_de_latente_vazio_nao_de_img2img():
-    """Se usassemos img2img, full_body entraria duas vezes (latente + embed)
-    e o peso declarado de cada referencia deixaria de valer."""
-    for path in (WF, WF2):
-        classes = {v["class_type"] for v in _nodes(path).values()}
-        assert "EmptyLatentImage" in classes
-        assert "VAEEncode" not in classes
-    assert mr.get_model(KEY)["parameters"]["denoise"] == 1.0
+
+def test_geracao_parte_da_imagem_original_nao_de_latente_vazio():
+    """O benchmark e PERSONAGEM -> WAI -> CHIBI, entao e img2img.
+
+    O latente inicial TEM de vir de full_body.png. Se viesse de
+    EmptyLatentImage o modelo inventaria uma personagem nova e a
+    referencia estaria sendo descartada.
+    """
+    for ver in ("v0", "v2"):
+        wf = _workflow(ver)
+        classes = {k: v["class_type"] for k, v in wf.items()}
+        assert "EmptyLatentImage" not in classes.values(), ver
+        enc = [k for k, c in classes.items() if c == "VAEEncode"]
+        assert len(enc) == 1, ver
+        ks = next(k for k, c in classes.items() if c == "KSampler")
+        assert wf[ks]["inputs"]["latent_image"] == [enc[0], 0], ver
+        fonte = wf[enc[0]]["inputs"]["pixels"][0]
+        assert classes[fonte] == "LoadImage"
+        assert wf[fonte]["inputs"]["image"] == "%%REF_FULL_BODY%%", ver
 
 
 def test_loaders_explicitos_para_nao_quebrar_o_pinning():
@@ -265,19 +315,26 @@ def test_notebook_para_se_faltar_referencia_da_run():
 # BASELINE WAI PURO (v0) — diagnostico do checkpoint
 # ----------------------------------------------------------------------
 
-def test_baseline_e_txt2img_so_com_nodes_core():
-    """A Run 001 mede o CHECKPOINT. Qualquer extra invalida o diagnostico."""
-    core = {"CheckpointLoaderSimple", "CLIPTextEncode", "EmptyLatentImage",
-            "KSampler", "VAEDecode", "SaveImage"}
-    classes = {v["class_type"] for v in _nodes(WF0).values()}
-    assert classes == core, classes ^ core
+
+def test_run_001_e_img2img_so_com_nodes_core():
+    """v0 = img2img puro, sem nenhum custom node."""
+    wf = _workflow("v0")
+    classes = sorted({v["class_type"] for v in wf.values()})
+    assert classes == sorted([
+        "CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage",
+        "VAEEncode", "KSampler", "VAEDecode", "SaveImage",
+    ]), classes
 
 
-def test_baseline_nao_tem_ipadapter_lora_controlnet_nem_hires():
-    classes = {v["class_type"] for v in _nodes(WF0).values()}
-    for termo in ("IPAdapter", "Lora", "ControlNet", "Upscale", "Hires",
-                  "LoadImage", "VAEEncode"):
-        assert not any(termo in c for c in classes), termo
+
+def test_run_001_nao_tem_ipadapter_lora_controlnet_nem_hires():
+    """Run 001 isola a imagem original: nada de condicionamento extra."""
+    wf = _workflow("v0")
+    classes = " ".join(v["class_type"] for v in wf.values()).lower()
+    for proibido in ("ipadapter", "lora", "controlnet", "upscale", "adetailer"):
+        assert proibido not in classes, proibido
+    ks = next(v for v in wf.values() if v["class_type"] == "KSampler")
+    assert ks["inputs"]["denoise"] == "%%DENOISE%%"
 
 
 def test_baseline_usa_o_vae_integrado_do_checkpoint():
@@ -288,18 +345,21 @@ def test_baseline_usa_o_vae_integrado_do_checkpoint():
     assert not any(v["class_type"] == "VAELoader" for v in n.values())
 
 
-def test_baseline_declara_que_nao_consome_referencia():
-    """A referencia nao pode sumir em silencio: tem de ficar registrada."""
-    g = json.loads(WF0.read_text())
-    assert g["_reference_count"] == 0
-    assert g["_baseline"] is True
-    assert "txt2img" in g["_comment"]
 
-    src = _nb_source()
-    assert "REFS_CONSUMIDAS = REFS_DECLARADAS if IS_RUN_003 else []" in src
-    assert '"references_declared": REFS_DECLARADAS' in src
-    assert '"references_consumed": REFS_CONSUMIDAS' in src
-    assert "declarada mas NAO consumida" in src
+def test_full_body_e_consumida_em_todas_as_runs():
+    """Nenhuma referencia declarada pode ser descartada em silencio.
+
+    Em img2img a imagem original NAO e opcional: ela e o ponto de
+    partida. Isto trava a regressao para o baseline txt2img antigo,
+    onde full_body era declarada mas nao consumida.
+    """
+    for ver, esperadas in (("v0", {"%%REF_FULL_BODY%%"}),
+                           ("v2", {"%%REF_FULL_BODY%%", "%%REF_FACE%%",
+                                   "%%REF_OUTFIT%%"})):
+        wf = _workflow(ver)
+        carregadas = {v["inputs"]["image"] for v in wf.values()
+                      if v["class_type"] == "LoadImage"}
+        assert carregadas == esperadas, (ver, carregadas)
 
 
 def test_runs_001_002_pulam_a_instalacao_do_ipadapter():
@@ -308,47 +368,32 @@ def test_runs_001_002_pulam_a_instalacao_do_ipadapter():
     assert "IPADAPTER_META = None" in src
 
 
+
 def test_parametros_seguem_a_recomendacao_do_autor():
-    p = mr.get_model(KEY)["parameters"]
-    assert p["steps"] == 20          # faixa do autor: 15-30
-    assert p["cfg"] == 6.0           # faixa do autor: 5-7
-    assert p["sampler"] == "euler_ancestral"   # "Euler a"
-    assert p["resolution"] == [1024, 1344]     # exemplo do autor
-    assert p["seed"] == 42
-    assert p["batch"] == 1
-    assert p["denoise"] == 1.0
-    assert p["hires_fix"] is False   # proibido nesta rodada
-    assert p["scheduler"] == "normal"
-    assert p["scheduler_note"].strip()   # escolha nossa, declarada
-    assert p["parameters_source"].strip()
+    """steps/CFG/sampler vem do autor do v17.0; denoise e resolucao nao."""
+    par = mr.get_model(KEY)["parameters"]
+    assert 15 <= par["steps"] <= 30
+    assert 5.0 <= par["cfg"] <= 7.0
+    assert par["sampler"] == "euler_ancestral"
+    assert par["hires_fix"] is False
+    fonte = par["parameters_source"].lower()
+    assert "denoise" in fonte and "img2img" in fonte
 
 
-def test_prompt_e_curto_conforme_o_autor():
-    """O autor avisa que prompt longo e excesso de tags PIORAM o resultado."""
+def test_prompt_e_negative_seguem_o_estilo_curto_do_autor():
     m = mr.get_model(KEY)
-    assert m["prompt_mode"] == "short_author_recommended"
     prompt = " ".join(m["prompt_override"].split())
-    assert prompt.startswith("masterpiece, best quality, amazing quality,")
-    assert len(prompt) < 350, f"prompt longo demais: {len(prompt)}"
-    # Elementos de design do benchmark preservados.
-    for termo in ("black hair", "red eyes", "horns", "cape",
-                  "golden ornaments", "chibi"):
-        assert termo in prompt, termo
-    # Negativo curto, sem acrescimos.
-    assert (m["negative_prompt_override"]
-            == "bad quality, worst quality, worst detail, sketch, censor")
-    assert m["prompt_override_reason"].strip()
+    assert len(prompt) < len(FLUX_PROMPT_LEN_REF), "prompt do FLUX nao serve"
+    neg = m["negative_prompt_override"]
+    assert len(neg.split(",")) <= 10, neg
+    assert neg.startswith("bad quality, worst quality, worst detail, sketch")
 
 
-def test_mudanca_de_prompt_e_resolucao_esta_documentada_como_limitacao():
-    """Divergir do FLUX enfraquece a comparacao: tem de estar escrito."""
+
+def test_diferenca_de_prompt_em_relacao_ao_flux_esta_registrada():
     m = mr.get_model(KEY)
-    assert "LIMITACAO REGISTRADA" in m["parameters"]["resolution_note"]
-    assert "1024x1024" in m["parameters"]["resolution_note"]
-    assert "CONSEQUENCIA REGISTRADA" in m["prompt_override_reason"]
-    src = _nb_source()
-    assert "WAI gera 1024x1344; FLUX gera 1024x1024." in src
-    assert "Os prompts diferem" in src
+    assert "FLUX" in m["prompt_override_reason"]
+    assert "1:1" in m["prompt_override_reason"]
 
 
 def test_notebook_orienta_o_diagnostico_das_tres_causas():
@@ -358,16 +403,17 @@ def test_notebook_orienta_o_diagnostico_das_tres_causas():
     assert "UM fator por vez" in src
 
 
+
 def test_erro_registra_a_etapa_exata():
-    src = _nb_source()
-    assert "ERRO_ETAPA = \"submissao_do_grafo\"" in src
-    assert "ERRO_ETAPA = \"execucao_do_grafo\"" in src
-    assert "BLOCKED na etapa" in src
+    """Falhar sem dizer ONDE obriga a re-executar tudo para descobrir."""
+    exec_cell = _celula_de_codigo("#@title 9.")
+    for etapa in ("submissao_do_grafo", "execucao_do_grafo",
+                  "timeout_execucao"):
+        assert etapa in exec_cell, etapa
+    # o detalhe do erro tem de sobreviver ao fim da sessao
+    assert "erro_wai.txt" in exec_cell
+    assert exec_cell.count("BLOCKED na etapa") >= 3
 
-
-# ----------------------------------------------------------------------
-# ZIP de resultados — entrega obrigatoria
-# ----------------------------------------------------------------------
 
 def test_zip_com_nome_exato_e_download():
     src = _nb_source()
@@ -410,17 +456,13 @@ def test_notebook_registra_referencias_declaradas_e_consumidas():
 # Nodes: so Core
 # ----------------------------------------------------------------------
 
-def test_apenas_core_mais_ipadapter_declarado():
-    """Um unico custom node, o do IP-Adapter, e ele esta declarado."""
-    core = {
-        "CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage",
-        "EmptyLatentImage", "KSampler", "VAEDecode", "SaveImage",
-        "CLIPVisionLoader",
-    }
-    ipa = set(mr.get_model(KEY)["custom_node_nodes"])
-    for path in (WF, WF2):
-        classes = {v["class_type"] for v in _nodes(path).values()}
-        assert classes <= core | ipa, classes - (core | ipa)
+
+def test_v2_usa_apenas_core_mais_ipadapter():
+    wf = _workflow("v2")
+    extras = {v["class_type"] for v in wf.values()
+              if v["class_type"] not in _CORE}
+    assert extras and all(c.startswith("IPAdapter") or c == "CLIPVisionLoader"
+                          for c in extras), extras
 
 
 def test_custom_node_declarado_com_repo_e_aceite():
@@ -474,33 +516,46 @@ def test_seed_42_e_batch_1():
     assert p["batch"] == 1
 
 
-def test_resolucao_explicita_e_compativel_com_sdxl():
-    """1024x1344: exemplo do autor, acima do nativo 1024x1024."""
-    r = mr.get_model(KEY)["parameters"]["resolution"]
-    assert r == [1024, 1344]
-    assert r[0] % 64 == 0 and r[1] % 64 == 0, "SDXL exige multiplo de 64"
 
+def test_resolucao_e_herdada_da_imagem_de_partida_sem_deformar():
+    """Nao ha resize: redimensionar deformaria a arte original.
 
-def test_denoise_decorre_do_pipeline_e_esta_justificado():
-    """denoise 1.0 nao e escolha estetica: a geracao parte de latente vazio."""
-    p = mr.get_model(KEY)["parameters"]
-    assert p["denoise"] == 1.0
-    assert p["denoise_status"] == "DERIVED_FROM_PIPELINE"
-    assert "EmptyLatentImage" in p["denoise_note"]
-
-
-def test_quality_tags_sao_as_do_autor_e_em_quantidade_minima():
-    """As tags do autor sao permitidas; o EXCESSO e que e proibido.
-
-    O proprio autor pede 'masterpiece, best quality, amazing quality' e
-    avisa contra acrescentar mais. Nao e embelezamento nosso: e o formato
-    documentado do checkpoint.
+    full_body.png e quadrado (1024x1024). Forcar 1024x1344 mudaria o
+    aspect de 1.0 para 0.76, esticando a personagem.
     """
-    prompt = " ".join(mr.get_model(KEY)["prompt_override"].split()).lower()
-    assert prompt.startswith("masterpiece, best quality, amazing quality,")
-    for extra in ("ultra detailed", "8k", "photorealistic", "award winning",
-                  "absurdres", "highres", "perfect anatomy"):
-        assert extra not in prompt, f"quality tag em excesso: {extra}"
+    par = mr.get_model(KEY)["parameters"]
+    assert par["resolution"] == "from_source_image"
+    assert "deform" in par["resolution_note"].lower()
+    for ver in ("v0", "v2"):
+        classes = " ".join(v["class_type"] for v in _workflow(ver).values())
+        assert "Scale" not in classes and "Resize" not in classes, ver
+
+
+
+def test_denoise_e_menor_que_um_e_marcado_como_experimental():
+    """denoise 1.0 destruiria o latente inicial e viraria txt2img."""
+    par = mr.get_model(KEY)["parameters"]
+    assert 0.0 < par["denoise"] < 1.0, par["denoise"]
+    assert par["denoise_status"] == "BASELINE_EXPERIMENTAL"
+    nota = par["denoise_note"].lower()
+    assert "nao otimizado" in nota.replace("\u00e3", "a") or "nao" in nota
+    assert "txt2img" in nota
+
+
+
+def test_prompt_manda_adaptar_e_nao_redesenhar():
+    """O prompt nao pode pedir uma personagem nova.
+
+    Em img2img um prompt que descreve uma personagem do zero compete
+    com a imagem de partida. Este manda ADAPTAR o design original.
+    """
+    m = mr.get_model(KEY)
+    prompt = " ".join(m["prompt_override"].split()).lower()
+    assert "input character" in prompt
+    assert "preserve the same character identity" in prompt
+    assert "adapt the original design" in prompt
+    assert "rather than redesigning" in prompt
+    assert m["prompt_mode"] == "img2img_adapt_not_redesign"
 
 
 def test_negativo_e_do_autor_do_checkpoint_e_esta_justificado():

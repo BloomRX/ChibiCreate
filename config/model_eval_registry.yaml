@@ -399,8 +399,8 @@ models:
       no Colab (que enxerga o Civitai) antes da primeira execucao.
     base_model: Illustrious-XL (SDXL)
     params: "~2.6B (UNet SDXL finetune)"
-    pipeline_type: sdxl_checkpoint_ipadapter
-    input_mode: ipadapter_embeds
+    pipeline_type: sdxl_checkpoint_img2img_ipadapter
+    input_mode: img2img_latent_plus_ipadapter_embeds
     references_supported: 3
     reference_mechanism: ipadapter_encode_combine
     reference_mechanism_note: >
@@ -504,79 +504,87 @@ models:
       cfg: 6.0
       sampler: euler_ancestral
       sampler_note: >
-        "Euler a" na nomenclatura do A1111 = `euler_ancestral` no ComfyUI.
-        Mesmo sampler, nomes diferentes.
+        "Euler a" do A1111 = `euler_ancestral` no ComfyUI.
       scheduler: normal
       scheduler_note: >
         O autor nao declara scheduler. "normal" e o padrao do ComfyUI para
-        SDXL e o que corresponde ao comportamento do A1111 com Euler a.
-        Registrado explicitamente por ser escolha nossa, nao do autor.
-      denoise: 1.0
-      denoise_status: DERIVED_FROM_PIPELINE
+        SDXL. Registrado por ser escolha nossa, nao do autor.
+      denoise: 0.50
+      denoise_status: BASELINE_EXPERIMENTAL
       denoise_note: >
-        1.0 porque a geracao e txt2img a partir de EmptyLatentImage. Vale
-        para o baseline (v0) e para a rota IP-Adapter (v2), onde a
-        referencia entra por embedding, nao pelo latente inicial.
-      resolution: [1024, 1344]
+        CORRECAO desta rodada: era 1.0. Com denoise 1.0 o latente inicial e
+        destruido e o processo vira txt2img na pratica — a personagem
+        original deixaria de guiar o resultado. O benchmark e
+        PERSONAGEM -> WAI -> CHIBI, entao denoise TEM de ser < 1.0.
+        0.50 e ponto de partida, NAO valor otimizado e NAO validado:
+        mais baixo preserva a arte original mas resiste a virar chibi;
+        mais alto vira chibi mas perde identidade. Sem sweep nesta rodada.
+        Configuravel no notebook.
+      resolution: from_source_image
       resolution_note: >
-        MUDANCA nesta rodada: era 1024x1024. O autor do v17.0 declara
-        resolucao nativa maior que 1024x1024 e da 1024x1344 como exemplo.
-        Gerar abaixo do nativo e causa conhecida de artefato e deformacao em
-        SDXL, entao 1024x1024 era candidato real a explicar o resultado
-        ruim. A saida deixa de ter o mesmo formato do FLUX (1024x1024):
-        LIMITACAO REGISTRADA da comparacao, nao ajuste silencioso. As
-        imagens de referencia NAO foram alteradas.
+        CORRECAO desta rodada: era 1024x1344 fixo. Em img2img a resolucao
+        de saida e a da IMAGEM DE PARTIDA, nao um parametro livre.
+        `full_body.png` e 1024x1024 (quadrado). Forcar 1024x1344 exigiria
+        redimensionar a arte original de aspect 1.0 para 0.76, ou seja,
+        DEFORMAR a personagem — proibido por instrucao. Por isso o grafo
+        NAO tem node de resize e a saida herda 1024x1024.
+        Efeito colateral positivo: volta a bater com o formato do FLUX
+        (1024x1024), o que fortalece a comparacao.
+        1024x1024 e resolucao nativa valida de SDXL. O autor cita 1024x1344
+        como exemplo para txt2img, onde a proporcao e escolha livre.
       batch: 1
       seed: 42
       hires_fix: false
       hires_note: >
-        O autor recomenda Hires fix 1.5x / 20 steps / R-ESRGAN 4x+ Anime6B /
-        denoise 0.35-0.5. NAO usado nesta rodada por instrucao explicita:
-        primeiro um baseline limpo. Fica para experimento separado.
+        Recomendado pelo autor (1.5x / 20 steps / R-ESRGAN 4x+ Anime6B /
+        denoise 0.35-0.5), mas NAO usado nesta rodada por instrucao.
       parameters_source: >
-        Faixas declaradas pelo autor do v17.0 (steps 15-30, CFG 5-7,
-        Euler a). Escolhemos o meio: 20 steps, CFG 6.0. Antes usavamos
-        30 steps / CFG 7.0, o topo da faixa. Nao e sweep: uma configuracao
-        so, dentro do recomendado.
+        steps 20 e CFG 6.0 sao o meio das faixas do autor do v17.0
+        (15-30 e 5-7), com Euler a. denoise e resolucao NAO vem do autor:
+        decorrem do pipeline img2img deste benchmark.
 
     workflows:
       run_001: experimental/wai_illustrious_ipadapter@v0
       run_002: experimental/wai_illustrious_ipadapter@v0
       run_003: experimental/wai_illustrious_ipadapter@v2
     workflows_note: >
-      MUDANCA nesta rodada. Runs 001/002 passam ao BASELINE v0: txt2img
-      puro, so nodes Core, sem IP-Adapter. Objetivo diagnostico — saber se
-      o checkpoint funciona antes de julgar o IP-Adapter. A Run 003 segue
-      no v2 (3 referencias), inalterada. O v1 (1 referencia via IP-Adapter)
-      fica preservado, sem uso nesta rodada.
-      CONSEQUENCIA: as Runs 001/002 NAO consomem full_body. Sem IP-Adapter
-      o SDXL nao recebe imagem de referencia, e com denoise 1.0 um img2img
-      descartaria o latente. A referencia fica registrada como
-      declarada-mas-nao-consumida, nunca omitida em silencio.
+      CORRECAO desta rodada: as tres runs sao IMG2IMG REAL. O latente
+      inicial vem de full_body.png (LoadImage -> VAEEncode -> KSampler) em
+      TODAS elas. A referencia nunca e descartada: ela e a imagem de
+      partida (primary_image_role: source_image).
+      v0 = Runs 001/002: img2img puro, sem IP-Adapter. So a imagem original
+      guia o resultado.
+      v2 = Run 003: o mesmo img2img MAIS multi-referencia via IP-Adapter.
+      Nele full_body.png tem DOIS papeis (latente inicial e referencia do
+      IP-Adapter), registrado como dual_role no recipe.
+      A comparacao 001 x 003 isola exatamente o efeito do IP-Adapter:
+      tudo o mais e identico.
+      O v1 (1 referencia via IP-Adapter, sem img2img) fica preservado no
+      repositorio, sem uso nesta rodada.
 
-    prompt_mode: short_author_recommended
+    prompt_mode: img2img_adapt_not_redesign
     prompt_override: >-
-      masterpiece, best quality, amazing quality, clean polished stylized
-      chibi full-body character, preserve the same character identity, black
-      hair, red eyes, horns, black outfit, long black cape and golden
-      ornaments, cute game/gacha chibi character, full body, centered
-      composition
+      Transform the input character into a clean stylized game/gacha chibi
+      full-body character. Preserve the same character identity, face, black
+      hair, red eyes, horns, outfit design, long black cape, golden
+      ornaments, colors, and recognizable costume structure. Adapt the
+      original design naturally to chibi proportions rather than redesigning
+      the character.
     prompt_override_reason: >
-      MUDANCA nesta rodada: antes usavamos o `base_prompt` compartilhado com
-      o FLUX (906 caracteres). O autor do WAI alerta que excesso de quality
-      tags e prompts longos REDUZEM a qualidade em modelos Illustrious. Um
-      prompt longo era candidato real a explicar o resultado ruim: nao da
-      para diagnosticar o checkpoint com um prompt que a documentacao dele
-      desaconselha. CONSEQUENCIA REGISTRADA: WAI e FLUX deixam de usar
-      prompt identico, o que enfraquece a comparacao direta de prompt — mas
-      e necessario para responder primeiro "o checkpoint funciona?". Nao e
-      prompt inventado para embelezar o WAI: e o formato recomendado pelo
-      autor, com os mesmos elementos de design do benchmark (cabelo preto,
-      olhos vermelhos, chifres, capa longa, ornamentos dourados).
-    negative_prompt_override: "bad quality, worst quality, worst detail, sketch, censor"
+      CORRECAO desta rodada. O prompt anterior comecava com quality tags e
+      descrevia uma personagem, o que em img2img empurra o modelo a
+      REDESENHAR em vez de adaptar. Este prompt fala do "input character" e
+      manda adaptar a proporcao, nao reinventar o design — coerente com o
+      objetivo PERSONAGEM -> WAI -> CHIBI e com o eixo medido
+      (DESIGN_PRESERVATION). Continua curto, como o autor do checkpoint
+      recomenda. CONSEQUENCIA REGISTRADA: difere do `base_prompt` que o
+      FLUX usa, entao a comparacao de prompt nao e 1:1.
+    negative_prompt_override: "bad quality, worst quality, worst detail, sketch, watermark, signature, logo, text, multiple views"
     negative_prompt_reason: >
-      Negativo curto declarado pelo autor. Nada acrescentado nesta rodada:
-      o proprio autor avisa que negativos longos pioram o resultado.
+      Curto, como o autor recomenda. Alem das tags de qualidade dele,
+      inclui supressao de watermark/assinatura/texto e de "multiple views"
+      (character sheet), que sao modos de falha comuns quando a imagem de
+      partida e uma splash art.
 
     download_gb: 10.5
     download_estimated: true

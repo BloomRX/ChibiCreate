@@ -17,27 +17,103 @@
 | 001 limpa, 003 suja | **(B)** WAI + IP-Adapter | investigar um fator por vez |
 | ambas limpas | **(C)** questão artística | comparar com o FLUX |
 
-As Runs 001/002 usam o workflow `v0`: `CheckpointLoaderSimple` →
-`CLIPTextEncode` ×2 → `EmptyLatentImage` → `KSampler` → `VAEDecode` →
-`SaveImage`. Nada mais. Sem IP-Adapter, ControlNet, LoRA, Hires ou
-ADetailer — qualquer extra invalidaria o diagnóstico.
+As Runs 001/002 usam o workflow `v0`, agora **img2img puro**. Sem
+IP-Adapter, ControlNet, LoRA, Hires ou ADetailer — qualquer extra
+invalidaria o diagnóstico.
 
-### `full_body` é declarada, mas não consumida
+### Correção: o benchmark é `PERSONAGEM NORMAL → WAI → CHIBI`
 
-Ponto que precisa ficar explícito: o pedido diz "Run 001 com uma referência:
-`full_body`", mas também proíbe IP-Adapter. **Sem IP-Adapter o SDXL não tem
-por onde receber uma imagem de referência** — e com `denoise 1.0` um img2img
-descartaria o latente de qualquer forma.
+A versão anterior executava as Runs 001/002 como **txt2img**:
+`full_body.png` era declarada mas **não consumida**, e o modelo gerava uma
+personagem só a partir do prompt. Isso respondia a pergunta errada — "o que
+este checkpoint desenha?" em vez de "este checkpoint converte a NOSSA
+personagem em chibi preservando o design?".
 
-Então a Run 001 é txt2img e o recipe registra os dois campos separados:
+As três runs agora são **img2img**, e o latente inicial vem sempre de
+`full_body.png`. A contradição "usar a referência sem IP-Adapter" se
+resolve pelo lado do img2img, não do txt2img: `VAEEncode` é justamente o
+caminho pelo qual o SDXL consome uma imagem sem nenhum custom node.
+
+### Run 001 / 002 — img2img puro (`v0.json`, 8 nodes)
 
 ```
-references_declared: ["full_body"]
-references_consumed: []
+[1] CheckpointLoaderSimple
+     ├── MODEL ──────────────────────────────┐
+     ├── CLIP ──> [2] CLIPTextEncode (pos) ──┤
+     │        └─> [3] CLIPTextEncode (neg) ──┤
+     └── VAE ─────────────────┐              │
+                              ▼              ▼
+[4] LoadImage (full_body) → [5] VAEEncode → [40] KSampler
+                                                  │
+                                    [41] VAEDecode → [42] SaveImage
 ```
 
-A referência não é omitida em silêncio. A Run 001 mede **o checkpoint**, não
-a fidelidade à imagem.
+### Run 003 — o mesmo img2img + IP-Adapter (`v2.json`, 18 nodes)
+
+O ramo do latente é **idêntico** ao da Run 001. O que muda é o MODEL que
+chega ao KSampler:
+
+```
+[10] IPAdapterModelLoader ─┐
+[11] CLIPVisionLoader ─────┼─> [12] Encoder (full_body, w=1.0) ─┐
+                           ├─> [13] Encoder (face,      w=0.6) ─┤
+                           └─> [14] Encoder (outfit,    w=0.8) ─┤
+                                                                │
+                          [15] CombineEmbeds pos (saídas :0) <──┤
+                          [16] CombineEmbeds neg (saídas :1) <──┘
+                                        │
+          [1] MODEL ──> [20] IPAdapterEmbeds ──> [40] KSampler (latente = [5])
+```
+
+Como o ramo do latente é igual, comparar 001 × 003 **isola exatamente o
+efeito do IP-Adapter**: todo o resto é idêntico.
+
+### `full_body.png` tem papel duplo na Run 003
+
+Na Run 003 a mesma imagem entra por dois caminhos: como **imagem inicial**
+do img2img (`VAEEncode`) e como **referência** do IP-Adapter
+(`IPAdapterEncoder`). É intencional e fica registrado no recipe como
+`dual_role`, para não parecer erro de montagem depois.
+
+| run | declaradas | consumidas | papel de `full_body` |
+|---|---|---|---|
+| 001 | `full_body` | `full_body` | `source_image` |
+| 002 | `full_body` | `full_body` | `source_image` |
+| 003 | `full_body`, `face`, `outfit` | as três | `source_image` + `ipadapter_reference` |
+
+Nenhuma referência declarada é descartada em silêncio — há teste e
+validação pré-execução para isso.
+
+### `denoise = 0.50` — `BASELINE_EXPERIMENTAL`
+
+Com `denoise 1.0` o latente inicial é destruído e o img2img vira txt2img na
+prática. Por isso **`denoise < 1.0` é obrigatório** em todas as runs deste
+benchmark.
+
+`0.50` é **ponto de partida, não valor otimizado e não validado**:
+
+- **mais baixo** preserva a arte original, mas resiste a virar chibi;
+- **mais alto** vira chibi, mas perde identidade e design da roupa.
+
+O valor certo depende do resultado visual, e essa avaliação é humana. É
+configurável na célula 0. Sem sweep nesta rodada.
+
+### Resolução: 1024×1024, herdada da imagem de partida
+
+**Divergência deliberada da instrução original (1024×1344), documentada.**
+
+Em img2img a resolução de saída é a da imagem de partida, não um parâmetro
+livre. `characters/waifu_001/reference/full_body.png` é **1024×1024**
+(aspect 1.0). Forçar 1024×1344 exigiria redimensionar a arte para aspect
+0.76 — **esticar a personagem verticalmente** —, o que a instrução "não
+deformar a imagem original" proíbe.
+
+Por isso os grafos **não têm node de resize**. 1024×1024 é resolução nativa
+válida de SDXL; o 1024×1344 citado pelo autor é exemplo para txt2img, onde
+a proporção é escolha livre.
+
+Efeito colateral positivo: é o mesmo formato das saídas do FLUX, o que
+**fortalece** a comparação em vez de enfraquecê-la.
 
 ### Parâmetros do autor do v17.0
 
@@ -47,35 +123,47 @@ a fidelidade à imagem.
 | CFG | 6.0 | meio da faixa do autor (5–7) |
 | sampler | `euler_ancestral` | "Euler a" do A1111 |
 | scheduler | `normal` | **escolha nossa** — o autor não declara |
-| resolução | **1024×1344** | exemplo do autor (nativo > 1024²) |
-| denoise | 1.0 | txt2img |
+| resolução | **1024×1024** | herdada da imagem de partida (img2img) |
+| denoise | **0.50** | `BASELINE_EXPERIMENTAL` — decorre do img2img |
 | VAE | integrado ao checkpoint | saída 2 do loader |
 | Hires fix | **desligado** | proibido nesta rodada |
 
-Antes usávamos 30 steps / CFG 7.0 (topo da faixa) e 1024×1024. **Gerar
-abaixo da resolução nativa é causa conhecida de artefato em SDXL**, então
-1024×1024 era candidato real a explicar o resultado ruim.
+### Prompt: adaptar, não redesenhar
 
-### Prompt curto
+O prompt anterior começava com quality tags e descrevia uma personagem. Em
+img2img isso é contraproducente: um prompt que descreve uma personagem do
+zero **compete** com a imagem de partida. O atual fala do "input character"
+e manda adaptar a proporção:
 
-O autor avisa que excesso de quality tags e negativos longos **reduzem** a
-qualidade em modelos Illustrious. Trocamos o `base_prompt` de 906 caracteres
-(compartilhado com o FLUX) pelo formato recomendado:
+> Transform the input character into a clean stylized game/gacha chibi
+> full-body character. Preserve the same character identity, face, black
+> hair, red eyes, horns, outfit design, long black cape, golden ornaments,
+> colors, and recognizable costume structure. Adapt the original design
+> naturally to chibi proportions rather than redesigning the character.
 
-> `masterpiece, best quality, amazing quality, clean polished stylized chibi full-body character, preserve the same character identity, black hair, red eyes, horns, black outfit, long black cape and golden ornaments, cute game/gacha chibi character, full body, centered composition`
+Negativo (curto, como o autor recomenda):
 
-Negativo: `bad quality, worst quality, worst detail, sketch, censor`
+> bad quality, worst quality, worst detail, sketch, watermark, signature,
+> logo, text, multiple views
 
-### Limitações registradas
+`watermark/signature/logo/text` e `multiple views` cobrem modos de falha
+comuns quando a imagem de partida é uma splash art.
 
-Duas assimetrias novas em relação ao FLUX, declaradas em vez de escondidas:
+### `WaifuSurvivors_Concept.json` não é usado aqui
 
-1. **Resolução:** WAI gera 1024×1344, FLUX gera 1024×1024.
-2. **Prompt:** deixaram de ser idênticos.
+É workflow histórico **txt2img** e serve só como referência de uso passado
+do checkpoint. Não é benchmark chibi. Um `checkpoint_txt2img_baseline`
+separado seria legítimo, mas **nunca como Run 001** — são dois experimentos
+diferentes, e misturá-los foi exatamente o erro corrigido nesta rodada.
 
-Ambas enfraquecem a comparação direta — mas são necessárias para responder
-primeiro "o checkpoint funciona?". As imagens de referência **não** foram
-alteradas.
+### Limitação registrada
+
+O prompt do WAI deixou de ser idêntico ao do FLUX (que usa `base_prompt`,
+906 caracteres). Isso enfraquece a comparação de prompt, mas é necessário:
+o formato longo do FLUX contraria a recomendação do autor do checkpoint. A
+resolução, ao contrário da rodada anterior, voltou a coincidir com a do
+FLUX. As imagens de referência **não** foram alteradas.
+
 
 ## A pergunta
 
@@ -231,16 +319,16 @@ comportamento do modelo.
 
 | | valor | origem |
 |---|---|---|
-| resolução | 1024×1024 | nativo SDXL, igual ao FLUX |
+| resolução | 1024×1024 | herdada de `full_body.png` (img2img), igual ao FLUX |
 | seed | 42 | diretiva |
 | batch | 1 | diretiva |
-| steps | 30 | recomendação do autor |
-| cfg | 7.0 | recomendação do autor |
+| steps | 20 | meio da faixa do autor (15–30) |
+| cfg | 6.0 | meio da faixa do autor (5–7) |
 | sampler / scheduler | euler_ancestral / normal | recomendação do autor |
-| denoise | 1.0 | `DERIVED_FROM_PIPELINE` — parte de latente vazio |
-| prompt | `base_prompt` do registry | **idêntico ao do FLUX** |
-| prefixo de qualidade | **nenhum** | embelezaria o candidato |
-| negativo | `bad quality, worst quality, worst detail, sketch, censor` | declarado pelo autor |
+| denoise | **0.50** | `BASELINE_EXPERIMENTAL` — obrigatoriamente < 1.0 |
+| imagem de partida | `full_body.png` | latente inicial de todas as runs |
+| prompt | `prompt_override` (adaptar, não redesenhar) | difere do FLUX — registrado |
+| negativo | `bad quality, worst quality, worst detail, sketch, watermark, signature, logo, text, multiple views` | tags do autor + modos de falha de splash art |
 
 Parâmetros de benchmark controlado, **não** copiados de screenshots do
 Civitai. Sem sweep de prompt e sem sweep de seed.
@@ -249,9 +337,9 @@ Civitai. Sem sweep de prompt e sem sweep de seed.
 
 | run | workflow | refs consumidas | o que testa |
 |---|---|---|---|
-| 001 | `v0` | — (txt2img) | **o checkpoint funciona?** |
-| 002 | `v0` | — (txt2img) | reprodutibilidade — repetição exata da 001 |
-| 003 | `v2` | `full_body` + `face` + `outfit` | multi-referência via IP-Adapter |
+| 001 | `v0` | `full_body` (img2img) | **a conversão para chibi funciona?** |
+| 002 | `v0` | `full_body` (img2img) | reprodutibilidade — repetição exata da 001 |
+| 003 | `v2` | `full_body` (papel duplo) + `face` + `outfit` | o IP-Adapter melhora o design? |
 
 Pesos da Run 003 — **BASELINE EXPERIMENTAL**, não validados:
 
@@ -283,7 +371,8 @@ determinismo absoluto.
    Nas Runs 001/002 ela se autodesativa e não instala nada.
 7. Células 7→13 em ordem.
 
-Rode a **Run 001 primeiro** e olhe a imagem. Se já vier com artefatos, pare:
+Rode a **Run 001 primeiro** e olhe a imagem — a célula 9 imprime o grafo
+resolvido antes de executar. Se já vier com artefatos, pare:
 a causa é **(A)** e o IP-Adapter não tem culpa. Só siga para a 003 se a 001
 estiver limpa.
 
