@@ -517,11 +517,33 @@ def test_guidance_scale_nao_se_chama_CFG():
 
 
 # ---------------------------------------------------------------------------
-# Ajuste manual de prompt / negative na celula 0
+# Ajuste manual de prompt / negative na celula 0 (campo default + toggle)
 # ---------------------------------------------------------------------------
 
-def test_prompt_sem_override_vem_do_preset():
+def _campo_do_form(nome):
+    """Valor literal de um #@param string da celula 0."""
+    for ln in _celula("#@title 0.").split("\n"):
+        if ln.startswith(f"{nome} = ") and "#@param" in ln:
+            return ln.split("=", 1)[1].split("#@param")[0].strip().strip('"')
+    raise AssertionError(f"campo {nome} nao encontrado no painel")
+
+
+def test_campos_vem_preenchidos_com_o_texto_do_preset():
+    """O ponto de partida e o nosso default, nao um campo vazio.
+
+    Os literais do form e os do dict PROMPT_PRESETS sao duas copias do
+    mesmo texto; se divergirem, o usuario edita a partir de um texto que
+    nao e o default real.
+    """
+    presets = _executa_celula0()["PROMPT_PRESETS"]["chibi_v1"]
+    assert _campo_do_form("PROMPT_CUSTOM") == presets["positive"]
+    assert _campo_do_form("NEGATIVE_CUSTOM") == presets["negative"]
+
+
+def test_toggles_comecam_desligados():
     ns = _executa_celula0()
+    assert ns["USAR_PROMPT_CUSTOM"] is False
+    assert ns["USAR_NEGATIVE_CUSTOM"] is False
     assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
     assert ns["NEGATIVE"] == ns["PROMPT_PRESETS"]["chibi_v1"]["negative"]
     assert ns["PROMPT_EDITADO"] is False
@@ -529,36 +551,66 @@ def test_prompt_sem_override_vem_do_preset():
                                    "negative": "preset:chibi_v1"}
 
 
-def test_override_substitui_o_preset():
+def test_texto_editado_so_vale_com_o_toggle_ligado():
+    """Campo alterado com o toggle desligado nao afeta a execucao."""
     ns = _executa_celula0(**{
-        'PROMPT_OVERRIDE = ""':
-            'PROMPT_OVERRIDE = "chibi, super deformed, pastel palette"',
-        'NEGATIVE_OVERRIDE = ""':
-            'NEGATIVE_OVERRIDE = "blurry, jpeg artifacts"',
+        f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+            'PROMPT_CUSTOM = "1girl, chibi, pastel palette"',
     })
-    assert ns["PROMPT"] == "chibi, super deformed, pastel palette"
-    assert ns["NEGATIVE"] == "blurry, jpeg artifacts"
-    assert ns["PROMPT_EDITADO"] is True
+    assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
+    assert ns["PROMPT_SOURCE"]["positive"] == "preset:chibi_v1"
+
+
+def test_toggle_ligado_aplica_o_texto_do_campo():
+    ns = _executa_celula0(**{
+        "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+        f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+            'PROMPT_CUSTOM = "1girl, chibi, super deformed, pastel palette"',
+    })
+    assert ns["PROMPT"] == "1girl, chibi, super deformed, pastel palette"
     assert ns["PROMPT_SOURCE"]["positive"] == "manual_override"
-    assert ns["PROMPT_SOURCE"]["negative"] == "manual_override"
-    assert ns["CONFIG"]["prompt"] == "chibi, super deformed, pastel palette"
+    assert ns["PROMPT_EDITADO"] is True
+    # o negativo continua no preset
+    assert ns["NEGATIVE"] == ns["PROMPT_PRESETS"]["chibi_v1"]["negative"]
+    assert ns["PROMPT_SOURCE"]["negative"] == "preset:chibi_v1"
+
+
+def test_toggle_ligado_sem_editar_nao_conta_como_override():
+    """Ligar o toggle e nao mexer no texto = preset, nao 'manual_override'.
+
+    Marcar como override faria dois experimentos identicos parecerem
+    diferentes na recipe.
+    """
+    ns = _executa_celula0(**{
+        "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+        "USAR_NEGATIVE_CUSTOM = False": "USAR_NEGATIVE_CUSTOM = True",
+    })
+    assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
+    assert ns["PROMPT_SOURCE"] == {"positive": "preset:chibi_v1",
+                                   "negative": "preset:chibi_v1"}
+    assert ns["PROMPT_EDITADO"] is False
+
+
+def test_toggle_ligado_com_campo_vazio_e_erro():
+    with pytest.raises(AssertionError, match="USAR_PROMPT_CUSTOM"):
+        _executa_celula0(**{
+            "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+            f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+                'PROMPT_CUSTOM = "   "',
+        })
 
 
 def test_os_dois_lados_sao_independentes():
     """Da para ajustar so o negativo mantendo o positivo do preset."""
     ns = _executa_celula0(**{
-        'NEGATIVE_OVERRIDE = ""': 'NEGATIVE_OVERRIDE = "blurry, extra fingers"',
+        "USAR_NEGATIVE_CUSTOM = False": "USAR_NEGATIVE_CUSTOM = True",
+        f'NEGATIVE_CUSTOM = "{_campo_do_form("NEGATIVE_CUSTOM")}"':
+            'NEGATIVE_CUSTOM = "blurry, extra fingers"',
     })
     assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
     assert ns["NEGATIVE"] == "blurry, extra fingers"
     assert ns["PROMPT_SOURCE"]["positive"] == "preset:chibi_v1"
     assert ns["PROMPT_SOURCE"]["negative"] == "manual_override"
-
-
-def test_override_so_de_espacos_cai_no_preset():
-    ns = _executa_celula0(**{'PROMPT_OVERRIDE = ""': 'PROMPT_OVERRIDE = "   "'})
-    assert ns["PROMPT"] == ns["PROMPT_PRESETS"]["chibi_v1"]["positive"]
-    assert ns["PROMPT_EDITADO"] is False
 
 
 def test_recipe_registra_que_o_prompt_foi_editado():
@@ -568,24 +620,33 @@ def test_recipe_registra_que_o_prompt_foi_editado():
     assert '"prompt_manually_edited": PROMPT_EDITADO' in codigo
 
 
-def test_override_com_termo_de_personagem_e_bloqueado():
+def test_custom_com_termo_de_personagem_e_bloqueado():
     """O prompt-base tem de servir para 100+ personagens."""
     with pytest.raises(SystemExit) as e:
-        _valida(**{'PROMPT_OVERRIDE = ""':
-                   'PROMPT_OVERRIDE = "1girl, chibi, silver hair, red horns"'})
+        _valida(**{
+            "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+            f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+                'PROMPT_CUSTOM = "1girl, chibi, silver hair, red horns"',
+        })
     assert "BLOCKED" in str(e.value)
     assert "termos especificos" in str(e.value)
 
 
 def test_negativo_pode_citar_tracos_de_personagem():
     """No negativo, 'horns' diz o que EVITAR — e legitimo."""
-    ns = _valida(**{'NEGATIVE_OVERRIDE = ""':
-                    'NEGATIVE_OVERRIDE = "bad quality, horns, extra limbs"'})
+    ns = _valida(**{
+        "USAR_NEGATIVE_CUSTOM = False": "USAR_NEGATIVE_CUSTOM = True",
+        f'NEGATIVE_CUSTOM = "{_campo_do_form("NEGATIVE_CUSTOM")}"':
+            'NEGATIVE_CUSTOM = "bad quality, horns, extra limbs"',
+    })
     assert ns["NEGATIVE"] == "bad quality, horns, extra limbs"
 
 
-def test_override_generico_passa_na_validacao():
-    ns = _valida(**{'PROMPT_OVERRIDE = ""':
-                    'PROMPT_OVERRIDE = "1girl, solo, chibi, super deformed, '
-                    'large head, simple cel shading, best quality"'})
+def test_custom_generico_passa_na_validacao():
+    ns = _valida(**{
+        "USAR_PROMPT_CUSTOM = False": "USAR_PROMPT_CUSTOM = True",
+        f'PROMPT_CUSTOM = "{_campo_do_form("PROMPT_CUSTOM")}"':
+            'PROMPT_CUSTOM = "1girl, solo, chibi, super deformed, large head, '
+            'simple cel shading, best quality"',
+    })
     assert "super deformed" in ns["PROMPT"]

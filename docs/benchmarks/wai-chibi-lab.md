@@ -77,7 +77,8 @@ Intencional, registrado no recipe como `reference_roles`.
 | entradas | `CHARACTER_ID`, `SOURCE_IMAGE`, `REFERENCE_FACE`, `REFERENCE_OUTFIT` | `waifu_001`, `full_body.png`, `face.png`, `outfit.png` |
 | modo | `REFERENCE_MODE` | `BOTH` |
 | prompt | `PROMPT_PRESET` | `chibi_v1` |
-| prompt | `PROMPT_OVERRIDE` · `NEGATIVE_OVERRIDE` | vazio (usa o preset) |
+| prompt | `USAR_PROMPT_CUSTOM` · `PROMPT_CUSTOM` | `False` · texto do preset |
+| prompt | `USAR_NEGATIVE_CUSTOM` · `NEGATIVE_CUSTOM` | `False` · texto do preset |
 | denoise | `DENOISE` · `USAR_SWEEP_DE_DENOISE` · `DENOISE_SWEEP` | `0.90` · `False` · `0.50…0.90` |
 | sampling | `STEPS` · `CFG` · `SAMPLER` · `SCHEDULER` · `SEED` | `28` · `5.5` · `euler_ancestral` · `normal` · `42` |
 | IP-Adapter | `IPADAPTER_WEIGHT` · `WEIGHT_TYPE` · `START_AT` · `END_AT` · `EMBEDS_SCALING` | `0.75` · `linear` · `0.0` · `1.0` · `V only` |
@@ -88,9 +89,30 @@ Intencional, registrado no recipe como `reference_roles`.
 
 ### Ajuste manual do prompt
 
-`PROMPT_OVERRIDE` e `NEGATIVE_OVERRIDE` vazios usam o preset. Preenchidos,
-substituem-no. Os dois lados são independentes: dá para ajustar só o
-negativo mantendo o positivo do preset.
+Os campos `PROMPT_CUSTOM` e `NEGATIVE_CUSTOM` **já vêm preenchidos com o
+texto do preset**, para editar a partir do default em vez de escrever do
+zero. Quem decide se o texto vale é o toggle ao lado:
+
+| toggle | campo | resultado |
+|---|---|---|
+| desligado | qualquer coisa | usa o preset (o campo é rascunho) |
+| ligado | texto alterado | usa o texto, `manual_override` |
+| ligado | texto intocado | usa o preset, **não** conta como override |
+| ligado | vazio | erro explícito |
+
+O toggle existe porque, com o campo pré-preenchido, "campo não vazio"
+deixou de significar "o usuário quis customizar".
+
+Ligar o toggle sem alterar o texto **não** é registrado como
+`manual_override`: marcar seria fazer dois experimentos idênticos
+parecerem diferentes na recipe.
+
+Os dois lados são independentes: dá para ajustar só o negativo mantendo o
+positivo do preset.
+
+> O texto default existe em dois lugares (o literal do form e o dict
+> `PROMPT_PRESETS`). Um teste garante que não divirjam — se divergissem,
+> você editaria a partir de um texto que não é o default real.
 
 O recipe grava `prompt_source` (`preset:chibi_v1` ou `manual_override`) por
 lado e `prompt_manually_edited`. Sem isso, um experimento com prompt
