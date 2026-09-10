@@ -156,6 +156,23 @@ do checkpoint. Não é benchmark chibi. Um `checkpoint_txt2img_baseline`
 separado seria legítimo, mas **nunca como Run 001** — são dois experimentos
 diferentes, e misturá-los foi exatamente o erro corrigido nesta rodada.
 
+### O relatório do ZIP também estava errado
+
+Os workflows já estavam corretos como img2img, mas o `RELATORIO.md` gerado
+pela célula 13 continuava afirmando "as Runs 001/002 são txt2img puro" —
+frase **hardcoded** no código que monta o relatório, sobrevivente da versão
+anterior. O mesmo texto obsoleto estava nas células 11 e 12.
+
+Isso é pior que não ter relatório: o artefato contradizia o que a máquina
+de fato executou. Corrigido, com uma seção `## ERRO CORRIGIDO` no próprio
+`RELATORIO.md` explicando a confusão entre *ausência de IP-Adapter* e
+*ausência de imagem inicial* — são coisas diferentes, e `VAEEncode` é node
+Core que não depende de custom node algum.
+
+O ZIP anterior também saiu apenas com `run_001`, sem aviso. A célula 13
+agora compara com `{run_001, run_002, run_003}`, imprime `ZIP INCOMPLETO`
+e marca o relatório como `PACOTE PARCIAL` quando faltar alguma.
+
 ### Limitação registrada
 
 O prompt do WAI deixou de ser idêntico ao do FLUX (que usa `base_prompt`,

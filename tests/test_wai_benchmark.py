@@ -970,3 +970,64 @@ def test_celula_de_referencias_usa_full_body_como_imagem_de_partida():
     assert "imagem inicial do img2img" in src
     # papel duplo aparece so na 003
     assert "ipadapter_reference" in src
+
+
+# ----------------------------------------------------------------------
+# Relatorio e ZIP
+# ----------------------------------------------------------------------
+
+def test_relatorio_nao_afirma_mais_que_as_runs_sao_txt2img():
+    """Regressao: o RELATORIO.md entregue dizia 'txt2img puro'.
+
+    O texto era gerado por codigo, com a frase hardcoded na celula do
+    ZIP. Os workflows ja estavam corretos, mas o relatorio contradizia o
+    que a maquina de fato executou — pior que nao ter relatorio.
+    """
+    for titulo in ("#@title 11.", "#@title 12.", "#@title 13."):
+        src = _celula_de_codigo(titulo)
+        # A secao ERRO CORRIGIDO cita a frase antiga de proposito, para
+        # explicar o erro. So o texto ANTES dela precisa estar limpo.
+        antes = src.split("## ERRO CORRIGIDO")[0].lower()
+        assert "txt2img puro" not in antes, titulo
+        assert "nao a consomem" not in antes, titulo
+        assert "medem o checkpoint" not in antes, titulo
+        assert "sao txt2img" not in antes, titulo
+
+
+def test_relatorio_tem_secao_de_erro_corrigido():
+    """A correcao precisa ficar no artefato, nao so no chat."""
+    src = _celula_de_codigo("#@title 13.")
+    assert "## ERRO CORRIGIDO" in src
+    assert "IP-Adapter NAO e necessario para img2img" in src
+    assert "`VAEEncode` ja faz a imagem entrar no latente" in src
+    assert "e img2img mesmo sem IP-Adapter" in src
+
+
+def test_relatorio_registra_determinismo_com_escopo():
+    """Dizer 'identico' sem dizer onde vale seria promessa vazia."""
+    src = _celula_de_codigo("#@title 13.")
+    assert "byte (artifact_sha256)" in src
+    assert "pixel (output_pixel_sha256)" in src
+    assert "escopo da afirmacao" in src
+    diag = _celula_de_codigo("#@title 11.")
+    assert "DETERMINISMO" in diag
+    assert "IDENTICO_PIXEL" in diag
+    # o escopo da afirmacao aparece impresso, quebrado em varias linhas
+    assert "outra GPU" in diag and "Nao prometemos determinismo" in diag
+
+
+def test_zip_avisa_quando_faltam_runs():
+    """O ZIP anterior saiu so com run_001 e nada avisou."""
+    src = _celula_de_codigo("#@title 13.")
+    assert '{"run_001", "run_002", "run_003"}' in src
+    assert "ZIP INCOMPLETO" in src
+    assert "PACOTE PARCIAL" in src
+
+
+def test_relatorio_documenta_ipadapter_da_run_003():
+    src = _celula_de_codigo("#@title 13.")
+    for campo in ("combine_method", "weights_status", "reference_mechanism",
+                  "reference_roles", "dual_role_note"):
+        assert campo in src, campo
+    # custom nodes vem de todas as runs, nao so da primeira
+    assert "for rec in recipes.values()" in src
