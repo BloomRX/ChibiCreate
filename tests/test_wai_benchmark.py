@@ -108,9 +108,15 @@ def test_valida_que_e_checkpoint_sdxl_antes_da_inferencia():
 def test_nao_move_nem_modifica_o_original_do_drive():
     src = _nb_source()
     assert "Arquivo original do Drive NAO foi movido nem modificado." in src
-    for proibido in ("shutil.move", "origem.unlink", "origem.rename",
-                     "os.remove(origem)"):
+    # `origem` e o arquivo do Drive: nada pode escrever nele.
+    for proibido in ("origem.unlink", "origem.rename", "os.remove(origem)",
+                     "shutil.move(str(origem)", "open(origem, \"w\")"):
         assert proibido not in src, proibido
+    # shutil.move existe, mas so na mesclagem do clone do ComfyUI.
+    for linha in src.split("\n"):
+        if "shutil.move" in linha:
+            assert "item" in linha or "sub" in linha, (
+                f"shutil.move fora da mesclagem do clone: {linha.strip()}")
     # Symlink primeiro; copia so se o symlink nao servir.
     assert "destino.symlink_to(origem)" in src
     i = src.index("destino.symlink_to(origem)")
@@ -532,8 +538,12 @@ def test_nao_toca_no_baseline_flux():
     src = _nb_source()
     assert "flux2_klein_4b_eval.ipynb" not in src.replace(
         "notebooks/flux2_klein_4b_eval.ipynb`", "")  # so a mencao no cabecalho
-    for proibido in ("os.remove", "shutil.rmtree"):
+    for proibido in ("os.remove",):
         assert proibido not in src, proibido
+    # rmtree so pode tocar no clone temporario do ComfyUI.
+    for linha in src.split("\n"):
+        if "shutil.rmtree" in linha:
+            assert "tmp" in linha, f"rmtree fora do clone temporario: {linha.strip()}"
     # A run_003 do FLUX so pode ser LIDA na montagem comparativa.
     for linha in src.split("\n"):
         if "run_003_output.png" in linha:
@@ -577,3 +587,55 @@ def test_nao_implementa_o_que_esta_fora_de_escopo():
 ])
 def test_campos_obrigatorios_presentes(campo):
     assert campo in mr.get_model(KEY)
+
+
+# ----------------------------------------------------------------------
+# Regressao: celula 4 (Drive) cria /content/ComfyUI antes da celula 5
+# ----------------------------------------------------------------------
+
+def test_instalacao_do_comfy_nao_confia_so_na_pasta_existir():
+    """Bug real: `git rev-parse HEAD` saiu com 128.
+
+    A celula 4 cria /content/ComfyUI/models/checkpoints para colocar o
+    symlink do Drive. A celula 5 via a pasta existindo, pulava o clone e
+    rodava git num diretorio que nao era repositorio.
+    """
+    src = _nb_source()
+    # O marcador de "instalado" e o .git + main.py, nao a pasta.
+    assert ('instalado = (COMFY / ".git").is_dir() and '
+            '(COMFY / "main.py").is_file()') in src
+    assert 'if not pathlib.Path("/content/ComfyUI").exists():' not in src
+
+
+def test_clone_lida_com_diretorio_nao_vazio():
+    """git clone recusa diretorio nao vazio: clonar ao lado e mesclar."""
+    src = _nb_source()
+    assert "if COMFY.exists() and any(COMFY.iterdir()):" in src
+    assert "_comfy_tmp" in src
+    # O que a celula 4 ja colocou nao pode ser sobrescrito.
+    assert "if not destino.exists():" in src
+    assert "elif not alvo.exists():" in src
+
+
+def test_erro_claro_se_a_pasta_nao_for_um_clone():
+    src = _nb_source()
+    assert 'if not (COMFY / ".git").is_dir():' in src
+    assert "BLOCKED — {COMFY} nao e um clone do ComfyUI" in src
+
+
+def test_subir_comfy_reaproveita_servidor_ja_no_ar():
+    src = _nb_source()
+    assert "ja estava no ar; reaproveitando." in src
+
+
+def test_reinicio_tolera_proc_none():
+    """PROC e None quando o servidor ja estava no ar."""
+    src = _nb_source()
+    assert "if PROC is not None:" in src
+    assert 'subprocess.run(["pkill", "-f", "ComfyUI/main.py"], check=False)' in src
+
+
+def test_celula_5_confere_o_checkpoint_do_drive():
+    """A mesclagem nao pode ter comido o symlink."""
+    src = _nb_source()
+    assert "AUSENTE — reexecute a celula 4" in src
