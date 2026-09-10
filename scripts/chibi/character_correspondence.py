@@ -384,12 +384,48 @@ class Correspondence:
     def dst_points(self) -> np.ndarray:
         return np.array([self.target[n].as_xy() for n in self.pairs], float)
 
+    def residuals(self) -> dict:
+        """Erro de reprojecao por par, em pixels do ALVO.
+
+        `self.transform` e a INVERSA (alvo -> origem), entao medimos onde cada
+        landmark do alvo cai na origem e comparamos com o par correspondente.
+        Sem isto, `confidence` seria a unica evidencia numerica — e ela e
+        agregada demais para mostrar QUAL ponto esta ruim.
+
+        ATENCAO ao interpretar: o TPS **interpola** os landmarks exatamente,
+        entao o residual dele e ~0 por construcao. Residual zero em TPS NAO
+        significa correspondencia boa — significa apenas que a spline passou
+        pelos pontos que voce deu. Se os landmarks estiverem errados, o
+        residual continua zero e a deformacao continua errada. Para afim e
+        similaridade (que sao sobre-determinadas) o numero e informativo.
+        Quem valida o TPS e o olho, no overlay.
+        """
+        if not self.pairs:
+            return {"per_landmark": {}, "max": None, "mean": None, "rmse": None}
+        dst = np.array([self.target[n].as_xy() for n in self.pairs], float)
+        src = np.array([self.source[n].as_xy() for n in self.pairs], float)
+        try:
+            proj = np.asarray(self.transform(dst), float)
+        except Exception:                          # pragma: no cover
+            return {"per_landmark": {}, "max": None, "mean": None,
+                    "rmse": None, "error": "transformacao nao inversivel"}
+        err = np.linalg.norm(proj - src, axis=1)
+        return {
+            "per_landmark": {n: round(float(e), 3)
+                             for n, e in zip(self.pairs, err)},
+            "max": round(float(err.max()), 3),
+            "mean": round(float(err.mean()), 3),
+            "rmse": round(float(np.sqrt((err ** 2).mean())), 3),
+            "unit": "pixels_no_espaco_da_origem",
+        }
+
     def as_dict(self) -> dict:
         return {
             "kind": self.kind,
             "n_pairs": self.n_pairs,
             "pairs": list(self.pairs),
             "confidence": round(self.confidence, 4),
+            "residuals": self.residuals(),
             "source_landmarks": {
                 n: {"x": round(self.source[n].x, 2),
                     "y": round(self.source[n].y, 2),
@@ -655,3 +691,45 @@ __all__ = [
     "transform_masks", "clip_to_target", "draw_landmarks",
     "draw_correspondence", "load_rgba",
 ]
+
+
+def mask_metrics(source_masks: dict[str, np.ndarray],
+                 warped_masks: dict[str, np.ndarray],
+                 clipped_masks: dict[str, np.ndarray],
+                 target_subject: np.ndarray,
+                 protected: np.ndarray | None = None) -> dict:
+    """Metricas por peca, no espaco do ALVO.
+
+    Separa `warped` de `clipped` de proposito: a diferenca entre os dois e
+    exatamente quanto a transformacao jogou para fora do personagem ou por
+    cima de regiao protegida. Se `clipping_pixels` for alto, a
+    correspondencia esta ruim — mesmo que o overlap final seja zero, porque
+    o clip mascara o problema.
+    """
+    out = {}
+    for nome in source_masks:
+        origem = int(source_masks[nome].sum())
+        bruto = int(warped_masks[nome].sum())
+        final = int(clipped_masks[nome].sum())
+        fora = int((warped_masks[nome] & ~target_subject).sum())
+        ov = (int((clipped_masks[nome] & protected).sum())
+              if protected is not None else 0)
+        out[nome] = {
+            "mask_area_source": origem,
+            "mask_area_target_raw": bruto,
+            "mask_area_target": final,
+            "area_ratio": round(final / origem, 4) if origem else None,
+            "clipping_pixels": bruto - final,
+            "clipping_pct": round(100 * (bruto - final) / bruto, 2) if bruto else 0.0,
+            "out_of_bounds_pixels": fora,
+            "out_of_bounds_pct": round(100 * fora / bruto, 2) if bruto else 0.0,
+            "mask_protected_overlap_pixels": ov,
+        }
+    out["_total"] = {
+        "mask_protected_overlap_pixels":
+            sum(v["mask_protected_overlap_pixels"] for v in out.values()),
+        "out_of_bounds_pixels":
+            sum(v["out_of_bounds_pixels"] for v in out.values()),
+        "clipping_pixels": sum(v["clipping_pixels"] for v in out.values()),
+    }
+    return out

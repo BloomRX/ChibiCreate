@@ -11,7 +11,7 @@ pare: não faz parte deste fluxo.
 
 | | |
 |---|---|
-| Notebook | `docs/colab/flux2_klein_4b_eval.ipynb` |
+| Notebook | `notebooks/flux2_klein_4b_eval.ipynb` |
 | Repositório | `https://github.com/BloomRX/ChibiCreate` |
 | **Branch** | **`arena/01a07ece-chibicreate`** |
 | Revision mínima | `b54ee3a` (ou posterior) |
@@ -26,7 +26,7 @@ pare: não faz parte deste fluxo.
 Em <https://colab.research.google.com> → aba **GitHub** → cole:
 
 ```
-https://github.com/BloomRX/ChibiCreate/blob/arena/01a07ece-chibicreate/docs/colab/flux2_klein_4b_eval.ipynb
+https://github.com/BloomRX/ChibiCreate/blob/arena/01a07ece-chibicreate/notebooks/flux2_klein_4b_eval.ipynb
 ```
 
 ## B — Selecionar GPU NVIDIA

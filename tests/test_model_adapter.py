@@ -34,6 +34,12 @@ class FakeClient:
         Image.new("RGBA", (64, 64), (10, 20, 30, 255)).save(dest)
         return dest
 
+# Guardar o original: este modulo troca um atributo GLOBAL de `experiment`.
+# Sem restaurar no fim, os 89 testes de test_comfy.py passam sozinhos mas
+# falham quando rodam depois deste arquivo — o FakeClient continua no lugar
+# do ComfyClient real e a assercao `name == "colab_comfy_gguf"` derruba
+# qualquer teste que use outro ambiente (ex.: "cloud").
+_COMFY_CLIENT_ORIGINAL = experiment.ComfyClient
 experiment.ComfyClient = FakeClient
 
 import tempfile, shutil
@@ -92,4 +98,8 @@ assert r["base_model_key"] == "qwen_image_edit_2511"
 assert r["commercial_status_note"]
 
 shutil.rmtree(TMP, ignore_errors=True)
+
+# Devolver o global ao estado original — ver comentario no topo.
+experiment.ComfyClient = _COMFY_CLIENT_ORIGINAL
+
 print("\nOK ponta a ponta")

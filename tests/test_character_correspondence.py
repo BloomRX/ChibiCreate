@@ -242,3 +242,56 @@ def test_visualizacoes_saem_sem_erro():
     assert cc.draw_landmarks(src, ls).size == src.size
     lado = cc.draw_correspondence(src, tgt, corr)
     assert lado.width == src.width + tgt.width
+
+
+# ---------------------------------------------------------------------------
+# metricas (residual, clipping, out-of-bounds)
+# ---------------------------------------------------------------------------
+
+def test_residuals_por_landmark_e_agregado():
+    _, _, corr, _ = _corr_real_para_chibi()
+    res = corr.residuals()
+    assert set(res["per_landmark"]) == set(corr.pairs)
+    assert res["max"] >= res["mean"] >= 0
+    assert res["rmse"] >= 0
+    assert res["max"] == max(res["per_landmark"].values())
+
+
+def test_residual_e_quase_zero_quando_a_transformacao_e_exata():
+    """Similaridade pura (escala + translacao) reproduz os pares."""
+    a = cc.LandmarkSet(bbox=(0, 0, 200, 400))
+    b = cc.LandmarkSet(bbox=(0, 0, 100, 200))
+    for n, (x, y) in {"top_of_head": (100, 10), "waist": (60, 200),
+                      "silhouette_bottom": (100, 390)}.items():
+        a.add(cc.Landmark(n, x, y))
+        b.add(cc.Landmark(n, x / 2, y / 2))
+    corr = cc.build_correspondence(a, b, kind="similarity",
+                                   use_bbox_anchors=False)
+    assert corr.residuals()["max"] < 1.0
+
+
+def test_metricas_de_mascara_separam_clipping_de_out_of_bounds():
+    src, tgt, corr, cabeca = _corr_real_para_chibi()
+    m = np.zeros(src.size[::-1], bool)
+    m[150:600, 300:700] = True
+    raw = {"torso": cc.transform_mask(m, corr, (512, 512))}
+    subj = np.array(tgt)[..., 3] > 0
+    clipped = cc.clip_to_target(dict(raw), subj, cabeca)
+    mt = cc.mask_metrics({"torso": m}, raw, clipped, subj, cabeca)
+
+    t = mt["torso"]
+    assert t["mask_area_source"] == int(m.sum())
+    assert t["mask_area_target"] <= t["mask_area_target_raw"]
+    # clipping = o que o warp jogou fora do corpo OU sobre area protegida
+    assert t["clipping_pixels"] == (t["mask_area_target_raw"]
+                                    - t["mask_area_target"])
+    assert t["mask_protected_overlap_pixels"] == 0
+    assert 0 <= t["out_of_bounds_pct"] <= 100
+    assert mt["_total"]["mask_protected_overlap_pixels"] == 0
+
+
+def test_recipe_carrega_as_metricas_novas():
+    _, _, corr, _ = _corr_real_para_chibi()
+    d = corr.as_dict()
+    assert "residuals" in d
+    assert "duplicate_points_dropped" in d["diagnostics"]
