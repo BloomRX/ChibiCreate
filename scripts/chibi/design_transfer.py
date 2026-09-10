@@ -154,16 +154,36 @@ def is_dark(rgb: np.ndarray) -> np.ndarray:
     return rgb.max(axis=2) < 90
 
 
+def _remove_small(func: Any, mask: np.ndarray, area: int, legacy_kw: str) -> np.ndarray:
+    """Chama remove_small_objects/holes de forma agnostica a versao.
+
+    scikit-image >= 0.26 usa `max_size` (keyword-only, remove areas <= valor);
+    versoes anteriores usam `min_size`/`area_threshold` (remove areas < valor).
+    O Colab costuma trazer 0.25.x. Passar o kwarg errado levanta TypeError,
+    entao detectamos pela assinatura e compensamos a diferenca de semantica.
+    """
+    import inspect
+
+    params = inspect.signature(func).parameters
+    if "max_size" in params and str(params.get(legacy_kw, "")).find("DEPRECATED") >= 0:
+        return func(mask, max_size=max(area - 1, 0))
+    if "max_size" in params and legacy_kw not in params:
+        return func(mask, max_size=max(area - 1, 0))
+    return func(mask, **{legacy_kw: area})
+
+
 def clean_mask(mask: np.ndarray, min_area: int = 64, close_radius: int = 2) -> np.ndarray:
     """Remove ilhas pequenas e fecha buracos. Determinista."""
-    from skimage.morphology import closing, disk, remove_small_holes, remove_small_objects
+    from skimage.morphology import disk, remove_small_holes, remove_small_objects
+
+    from skimage.morphology import closing as _closing
 
     if not mask.any():
         return mask
-    out = closing(mask, disk(close_radius))
-    out = remove_small_objects(out, max_size=max(min_area - 1, 0))
-    out = remove_small_holes(out, max_size=max(min_area - 1, 0))
-    return out.astype(bool)
+    out = _closing(mask, disk(close_radius)).astype(bool)
+    out = _remove_small(remove_small_objects, out, min_area, "min_size")
+    out = _remove_small(remove_small_holes, out, min_area, "area_threshold")
+    return np.asarray(out, dtype=bool)
 
 
 def build_masks(
@@ -281,9 +301,17 @@ def warp_tps(
     """
     from skimage.transform import ThinPlateSplineTransform, warp
 
-    tf = ThinPlateSplineTransform.from_estimate(np.asarray(dst_pts, float),
-                                                np.asarray(src_pts, float))
-    if not tf:
+    dst_a = np.asarray(dst_pts, float)
+    src_a = np.asarray(src_pts, float)
+    # scikit-image >= 0.26 expoe `from_estimate`; 0.25.x so tem `estimate`
+    # (que muta a instancia e devolve bool). O Colab costuma trazer 0.25.x.
+    if hasattr(ThinPlateSplineTransform, "from_estimate"):
+        tf = ThinPlateSplineTransform.from_estimate(dst_a, src_a)
+        ok = bool(tf)
+    else:  # pragma: no cover - exercitado no ambiente do Colab
+        tf = ThinPlateSplineTransform()
+        ok = tf.estimate(dst_a, src_a) is not False
+    if not ok:
         raise DesignTransferError("TPS nao convergiu para os pontos dados")
     return warp(layer, tf, output_shape=output_shape, order=order,
                 mode="constant", cval=0.0, preserve_range=True)

@@ -318,6 +318,29 @@ def test_nada_de_generativo_no_modulo():
         assert proibido not in fonte, f"dependencia generativa '{proibido}' encontrada"
 
 
+def test_compatibilidade_com_scikit_image_antigo():
+    """O Colab traz 0.25.x; o dev local, 0.26. As APIs divergem.
+
+    `max_size` (remove_small_*) e `from_estimate` (TPS) so existem na 0.26 e
+    levantam TypeError/AttributeError na 0.25. O codigo precisa detectar a
+    versao em vez de assumir uma. Regressao real: a celula 4 quebrou por isso.
+    """
+    fonte = (ROOT / "scripts" / "chibi" / "design_transfer.py").read_text()
+    assert "hasattr(ThinPlateSplineTransform" in fonte, "TPS precisa de fallback"
+    assert "inspect.signature" in fonte, "remove_small_* precisa de fallback"
+    # nao usar APIs depreciadas que somem na 0.28
+    assert "binary_closing" not in fonte
+
+
+def test_tps_funciona_com_a_api_disponivel():
+    """Exercita o caminho de fato instalado, seja qual for a versao."""
+    layer = np.zeros((60, 60), float)
+    layer[20:40, 20:40] = 1.0
+    pts = np.array([[0, 0], [59, 0], [0, 59], [59, 59], [30, 30]], float)
+    out = dt.warp_tps(layer, pts, pts, (60, 60), order=0)
+    assert np.count_nonzero(out > 0.5) > 0
+
+
 def test_licencas_declaradas_sao_permissivas():
     for lib, lic in dt.LIBRARY_LICENSES.items():
         assert any(t in lic for t in ("BSD", "MIT", "Apache")), f"{lib}: {lic}"
