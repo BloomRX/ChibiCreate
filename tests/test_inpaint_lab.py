@@ -643,3 +643,22 @@ def test_celula_3_diagnostica_canais_quando_a_area_e_absurda():
 
 def test_celula_3_bloqueia_alpha_inexistente():
     assert "nao tem canal" in _codigo("#@title 3")
+
+
+def test_celula_3_aceita_rabisco_vermelho_sobre_a_arte():
+    """Marcar a regiao com pincel vermelho por cima da propria arte e o jeito
+    natural de indicar a area; o arquivo nao e binario."""
+    codigo = _codigo("#@title 3")
+    assert "_marcas_vermelhas" in codigo
+    assert "red_marks_over_source" in codigo
+    assert "MASK_MODE" in _celula("#@title 0")
+
+
+def test_celula_3_detecta_o_modo_sozinha():
+    codigo = _codigo("#@title 3")
+    assert "_parece_a_arte" in codigo
+    assert 'MASK_MODE == "auto"' in codigo or '_modo == "auto"' in codigo
+
+
+def test_celula_3_sugere_o_modo_rabisco_no_diagnostico():
+    assert "RABISCOU DE VERMELHO" in _codigo("#@title 3")
