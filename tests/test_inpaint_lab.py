@@ -826,3 +826,22 @@ def test_celula_4_confirma_que_os_nodes_do_ipadapter_carregaram():
     assert "IPAdapterEmbeds" in c4
     assert "_faltando" in c4
     assert "TESTE 3 nao pode rodar" in c4
+
+
+def test_referencia_vem_do_repo_e_nao_por_upload():
+    """full_body.png E versionado (a run 003 nao e): exigir upload dele era
+    pedir ao usuario um arquivo que o clone ja tem."""
+    c6 = _codigo("#@title 6")
+    assert "REF_REPO" in c6
+    assert 'REPO / "characters" / CHARACTER_ID / "reference"' in c6
+    assert "REF_UP.exists()" in c6, "upload ainda pode sobrescrever"
+
+
+def test_referencia_versionada_existe_para_waifu_001():
+    ref = ROOT / "characters" / "waifu_001" / "reference" / "full_body.png"
+    assert ref.exists(), "a referencia do TESTE 3 tem de estar no repo"
+
+
+def test_celula_2_nao_pede_upload_da_referencia():
+    c2 = _celula("#@title 2")
+    assert "NAO precisa de upload" in c2
