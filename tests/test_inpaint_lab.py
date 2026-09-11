@@ -167,17 +167,18 @@ def test_comeca_sem_referencia():
     assert ns["CONFIG"]["ipadapter"] is None
 
 
-def test_modo_com_referencia_exige_aceite_do_custom_node():
-    """A regra do projeto proibe instalar custom node sem autorizacao."""
+def test_modo_com_referencia_bloqueia_se_o_aceite_for_recusado():
+    """O aceite ja foi dado por escrito para o TESTE 3, entao o default e
+    True; mas desmarcar tem de continuar bloqueando de verdade."""
     with pytest.raises(SystemExit, match="IPADAPTER_ACK"):
         _executa_celula0(**{'INPAINT_MODE = "PURE_INPAINT"':
-                            'INPAINT_MODE = "WITH_REFERENCE"'})
+                            'INPAINT_MODE = "WITH_REFERENCE"',
+                            'IPADAPTER_ACK = True': 'IPADAPTER_ACK = False'})
 
 
 def test_modo_com_referencia_autorizado_seleciona_o_teste_3():
     ns = _executa_celula0(**{'INPAINT_MODE = "PURE_INPAINT"':
-                             'INPAINT_MODE = "WITH_REFERENCE"',
-                             'IPADAPTER_ACK = False': 'IPADAPTER_ACK = True'})
+                             'INPAINT_MODE = "WITH_REFERENCE"'})
     assert ns["TEST_ID"] == "TESTE_3"
     assert ns["WORKFLOW_VERSION"] == "v1"
     assert ns["CONFIG"]["reference_image"] == "full_body.png"
@@ -755,6 +756,7 @@ def test_painel_exige_aceite_para_custom_node():
     codigo = _celula("#@title 0")
     assert "IPADAPTER_ACK" in codigo
     assert "COM_REFERENCIA and not IPADAPTER_ACK" in codigo
+    assert "IPADAPTER_ACK = True" in codigo, "aceite ja dado para o TESTE 3"
 
 
 def test_mascara_enviada_ao_comfy_e_a_resolvida():
