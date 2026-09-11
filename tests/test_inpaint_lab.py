@@ -784,3 +784,43 @@ def test_lock_registra_os_pesos_do_ipadapter_sem_fingir_download():
     assert ipa["license"]["name"] == "Apache-2.0"
     assert ipa["license"]["commercial_status"] == "pending_human_review"
     assert ipa["custom_node_ack_required"] is True
+
+
+def test_celula_6_anuncia_o_teste_e_o_ipadapter():
+    """Sem cabecalho, uma reexecucao com GRAFO velho passa despercebida."""
+    c6 = _codigo("#@title 6")
+    assert "TEST_ID" in c6 and "WORKFLOW_VERSION" in c6
+    assert "IP-Adapter no grafo" in c6
+
+
+def test_celula_6_bloqueia_grafo_incoerente_com_o_modo():
+    c6 = _codigo("#@title 6")
+    assert "COM_REFERENCIA and not _ipa" in c6
+    assert "not COM_REFERENCIA and _ipa" in c6
+
+
+def test_celula_7_prova_o_grafo_no_envio():
+    c7 = _codigo("#@title 7")
+    assert "_ipa_run" in c7
+    assert "COM_REFERENCIA != bool(_ipa_run)" in c7
+
+
+def test_celula_7_detecta_output_identico_a_run_anterior():
+    """Dois grafos diferentes praticamente nunca dao bits iguais."""
+    c7 = _codigo("#@title 7")
+    assert "output IDENTICO" in c7
+    assert "output_pixel_sha256" in c7
+
+
+def test_celula_4_instala_dependencias_do_custom_node():
+    """Sem os requirements o node some do /object_info, sem erro na tela."""
+    c4 = _codigo("#@title 4")
+    assert "requirements.txt" in c4
+    assert "pip" in c4
+
+
+def test_celula_4_confirma_que_os_nodes_do_ipadapter_carregaram():
+    c4 = _celula("#@title 4")
+    assert "IPAdapterEmbeds" in c4
+    assert "_faltando" in c4
+    assert "TESTE 3 nao pode rodar" in c4
