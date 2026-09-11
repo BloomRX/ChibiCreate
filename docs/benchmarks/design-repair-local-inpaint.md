@@ -222,3 +222,92 @@ correção localizada e vira retransformação.
 
 Registrar exatamente por quê e partir para outra técnica. **Não mascarar um
 resultado ruim com pós-processamento.**
+
+
+## TESTE 3 — reparo com referencia visual (IP-Adapter)
+
+### Por que existe
+
+O TESTE 1 (inpaint puro) rodou e esta **encerrado como resultado negativo
+limpo**: dentro da mascara o modelo pintou algo plausivel — mais preto —
+em vez de reconstruir o design. Nao foi falha de execucao. O grafo do
+`v0.json` entrega ao modelo exatamente tres coisas: a Run 003, a mascara e
+um prompt **deliberadamente generico** (sem cor, roupa ou acessorio, por
+regra do projeto). Nenhuma delas carrega o design da personagem. O modelo
+nao tinha como saber o que reconstruir.
+
+`preserve character design` no prompt nao preserva nada: e texto, e o
+modelo nao conhece o design.
+
+### A pergunta do TESTE 3
+
+Uma referencia **visual** permite reconstruir a roupa sem descrever a
+personagem no prompt? Se sim, o prompt continua generico e reutilizavel
+para 100+ personagens — a identidade vem da imagem, como manda a regra.
+
+### O que muda em relacao ao TESTE 1
+
+**Um unico fator.** Mesma source, mesma mascara, mesmos parametros de
+amostragem, mesmo prompt. A unica diferenca e `full_body.png` entrando
+como referencia de IP-Adapter.
+
+| | TESTE 1 | TESTE 3 |
+|---|---|---|
+| workflow | `v0.json` | `v1.json` |
+| nodes | 12, so de fabrica | 17, + `ComfyUI_IPAdapter_plus` |
+| referencia | declarada, nao usada | `full_body.png` via IP-Adapter |
+
+### Arquitetura
+
+```
+run_003 ──> LoadImage(10) ──> InpaintModelConditioning(20) ──> latente ──┐
+mascara ──> GrowMask ──> FeatherMask ──────────> (20)                    │
+                                                                         v
+checkpoint ──> ModelSamplingDiscrete(5, v_pred) ──> IPAdapterEmbeds(34) ──> KSampler(40)
+                                                          ^
+full_body ──> LoadImage(30) ──> IPAdapterEncoder(33) ─────┘
+                                CLIPVisionLoader(32) ─────┘
+                                IPAdapterModelLoader(31) ─┘
+```
+
+Tres propriedades que o notebook **verifica no grafo**, nao assume:
+
+1. **A imagem principal continua sendo a Run 003.** O latente sai do
+   `InpaintModelConditioning`, alimentado pelo `LoadImage(10)`. A
+   referencia nunca vira imagem principal — se virasse, a Run 003 seria
+   descartada e isso deixaria de ser reparo local.
+2. **O IP-Adapter atua sobre o MODEL, em paralelo, nunca sobre o latente.**
+3. **Ordem `ModelSamplingDiscrete` → `IPAdapterEmbeds` → `KSampler`.** O
+   adapter patcha o model **depois** do v-prediction, nunca antes.
+
+### Decisoes de implementacao
+
+**Loaders explicitos, nao `IPAdapterUnifiedLoader`.** O Unified resolve
+arquivo e encoder a partir de um preset, o que quebraria o pinning por
+SHA256 e a auditoria. Usamos `IPAdapterModelLoader` + `CLIPVisionLoader`.
+
+**`IPAdapterEncoder` + `IPAdapterEmbeds`, nao `IPAdapterAdvanced`.**
+Mantem o padrao ja auditado em `wai_illustrious_ipadapter/v3.json` e
+permite declarar o peso da referencia separadamente.
+
+**Pareamento vit-h.** `ip-adapter-plus_sdxl_vit-h` exige o encoder
+**CLIP-ViT-H**, nao o bigG. Errar o par nao levanta erro claro — degrada
+em silencio. Ambos os pesos estao em `models.lock.yaml` sob
+`ip_adapter_plus_sdxl`, com licenca **Apache-2.0 propria**, separada da do
+Waifu-Inpaint-XL.
+
+**Custom node exige aceite.** A regra do projeto proibe instalar custom
+node sem autorizacao: `IPADAPTER_ACK` bloqueia enquanto nao for marcado. O
+commit do node vai para o recipe.
+
+### O que este teste NAO faz
+
+Sem sweep de denoise, sem sweep de prompt, sem alterar a mascara, sem
+trocar o checkpoint. O TESTE 1 permanece registrado e o benchmark do
+WAI v17 continua intacto.
+
+### Interpretacao
+
+`outside_mask_changed_percentage` e `protected_overlap_pixels` continuam
+medindo **localidade, nao qualidade**. Se a roupa ficou mais fiel ao
+design e **avaliacao humana** — nenhuma metrica aqui responde isso.

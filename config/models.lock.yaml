@@ -419,6 +419,53 @@ models:
       prompt; registramos o fato porque afeta o comportamento do modelo e a
       adequacao ao projeto.
 
+  ip_adapter_plus_sdxl:
+    # Pesos AUXILIARES do TESTE 3 (design repair com referencia visual).
+    # Nao sao checkpoint e nao substituem nada: atuam sobre o MODEL do
+    # Waifu-Inpaint-XL. Licenca propria, separada da do inpaint e da do v170.
+    repo: h94/IP-Adapter
+    source: https://huggingface.co/h94/IP-Adapter
+    revision: unknown
+    revision_note: >
+      Preencher com o commit real do repo apos o primeiro download; hoje o
+      notebook baixa de refs/main sem pinar revision.
+    weights:
+      verified: false
+      verified_note: >
+        Pesos ainda nao baixados por este projeto. Os sha256 sao calculados
+        na celula 4 e devem ser transcritos para ca depois da primeira
+        execucao do TESTE 3.
+      files:
+        - name: ip-adapter-plus_sdxl_vit-h.safetensors
+          path_in_repo: sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors
+          sha256: null
+          role: ipadapter_adapter
+        - name: CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors
+          path_in_repo: models/image_encoder/model.safetensors
+          sha256: null
+          role: clip_vision_encoder
+          rename_note: >
+            O arquivo no repo chama-se model.safetensors; o ComfyUI espera o
+            nome CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors.
+    pairing_note: >
+      O sufixo vit-h do adapter EXIGE o encoder CLIP-ViT-H. Parear com o
+      CLIP-ViT-bigG nao levanta erro claro: apenas degrada o resultado em
+      silencio.
+    license:
+      name: Apache-2.0
+      verified: false
+      commercial_status: pending_human_review
+      note: >
+        Licenca declarada no card do h94/IP-Adapter. NAO se mistura com a do
+        Waifu-Inpaint-XL (CreativeML Open RAIL++-M) nem com a do
+        waiIllustriousSDXL_v170.
+    requires_custom_node: ComfyUI_IPAdapter_plus
+    custom_node_repo: https://github.com/cubiq/ComfyUI_IPAdapter_plus
+    custom_node_ack_required: true
+    used_by: waifu_inpaint_eval TESTE_3
+    gated:
+      is_gated: false
+
   waifu_inpaint_xl:
     role: local_inpaint_design_repair
     display_name: Waifu-Inpaint-XL

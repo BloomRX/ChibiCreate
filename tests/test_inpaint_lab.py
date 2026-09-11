@@ -158,16 +158,33 @@ def test_strength_nao_herda_o_0_90_do_img2img():
 
 
 def test_comeca_sem_referencia():
+    """O default continua sendo o TESTE 1: referencia so por escolha explicita."""
     ns = _executa_celula0()
     assert ns["INPAINT_MODE"] == "PURE_INPAINT"
-    assert ns["CONFIG"]["reference_declared_not_used"] == "full_body.png"
+    assert ns["TEST_ID"] == "TESTE_1"
+    assert ns["WORKFLOW_VERSION"] == "v0"
+    assert ns["CONFIG"]["reference_image"] is None
+    assert ns["CONFIG"]["ipadapter"] is None
 
 
-def test_modo_com_referencia_bloqueia():
-    """Nao prometer no dropdown algo que roda diferente do nome."""
-    with pytest.raises(AssertionError, match="IP-Adapter"):
+def test_modo_com_referencia_exige_aceite_do_custom_node():
+    """A regra do projeto proibe instalar custom node sem autorizacao."""
+    with pytest.raises(SystemExit, match="IPADAPTER_ACK"):
         _executa_celula0(**{'INPAINT_MODE = "PURE_INPAINT"':
                             'INPAINT_MODE = "WITH_REFERENCE"'})
+
+
+def test_modo_com_referencia_autorizado_seleciona_o_teste_3():
+    ns = _executa_celula0(**{'INPAINT_MODE = "PURE_INPAINT"':
+                             'INPAINT_MODE = "WITH_REFERENCE"',
+                             'IPADAPTER_ACK = False': 'IPADAPTER_ACK = True'})
+    assert ns["TEST_ID"] == "TESTE_3"
+    assert ns["WORKFLOW_VERSION"] == "v1"
+    assert ns["CONFIG"]["reference_image"] == "full_body.png"
+    assert ns["CONFIG"]["reference_role"] == "ipadapter_visual_reference_only"
+    # o par vit-h/CLIP-ViT-H nao pode ser trocado em silencio
+    assert ns["CLIP_VISION_FILE"].startswith("CLIP-ViT-H-14")
+    assert "vit-h" in ns["IPADAPTER_FILE"]
 
 
 def test_prompt_fala_da_funcao_nao_da_personagem():
@@ -662,3 +679,108 @@ def test_celula_3_detecta_o_modo_sozinha():
 
 def test_celula_3_sugere_o_modo_rabisco_no_diagnostico():
     assert "RABISCOU DE VERMELHO" in _codigo("#@title 3")
+
+
+# --------------------------------------------------------------------------
+# TESTE 3: design repair com referencia visual (IP-Adapter)
+# --------------------------------------------------------------------------
+
+WF_V1 = ROOT / "workflows" / "experimental" / "waifu_inpaint_xl" / "v1.json"
+
+
+def _v1():
+    return json.loads(WF_V1.read_text())
+
+
+def _cls_v1():
+    return {k: v["class_type"] for k, v in _v1().items()
+            if not k.startswith("_")}
+
+
+def test_v1_existe_e_nao_substitui_o_v0():
+    assert WF_V1.exists(), "TESTE 3 precisa de workflow proprio"
+    assert WF.exists(), "o v0 do TESTE 1 tem de continuar registrado"
+    assert _v1()["_test"] == "TESTE_3"
+    assert json.loads(WF.read_text())["_test"] == "TESTE_1"
+
+
+def test_v1_mantem_a_run_003_como_imagem_principal():
+    """A referencia nao pode virar a fonte do inpaint: isso descartaria a
+    Run 003 e deixaria de ser reparo local."""
+    wf, cls = _v1(), _cls_v1()
+    imc = [k for k, c in cls.items() if c == "InpaintModelConditioning"][0]
+    enc = [k for k, c in cls.items() if c == "IPAdapterEncoder"][0]
+    assert wf[imc]["inputs"]["pixels"] != wf[enc]["inputs"]["image"]
+    ks = [k for k, c in cls.items() if c == "KSampler"][0]
+    assert wf[ks]["inputs"]["latent_image"][0] == imc
+
+
+def test_v1_aplica_ipadapter_depois_do_v_prediction():
+    wf, cls = _v1(), _cls_v1()
+    emb = [k for k, c in cls.items() if c == "IPAdapterEmbeds"][0]
+    assert cls[wf[emb]["inputs"]["model"][0]] == "ModelSamplingDiscrete"
+    ks = [k for k, c in cls.items() if c == "KSampler"][0]
+    assert wf[ks]["inputs"]["model"][0] == emb, "KSampler ignoraria o adapter"
+
+
+def test_v1_usa_loaders_explicitos_e_nao_o_unified():
+    """O UnifiedLoader resolve os pesos por preset e quebra o pinning."""
+    cls = set(_cls_v1().values())
+    assert "IPAdapterUnifiedLoader" not in cls
+    assert {"IPAdapterModelLoader", "CLIPVisionLoader"} <= cls
+
+
+def test_v1_nao_usa_vae_encode_for_inpaint():
+    assert "VAEEncodeForInpaint" not in _cls_v1().values()
+
+
+def test_v1_difere_do_v0_apenas_pela_referencia():
+    """Um fator por vez: fora os nodes de referencia, os grafos sao iguais."""
+    v0 = {k: v for k, v in json.loads(WF.read_text()).items()
+          if not k.startswith("_")}
+    v1 = {k: v for k, v in _v1().items() if not k.startswith("_")}
+    novos = set(v1) - set(v0)
+    assert {_cls_v1()[k] for k in novos} == {
+        "LoadImage", "IPAdapterModelLoader", "CLIPVisionLoader",
+        "IPAdapterEncoder", "IPAdapterEmbeds"}
+    for k in set(v0) & set(v1):
+        if k == "40":   # KSampler muda so a origem do model
+            assert v0[k]["inputs"]["latent_image"] == v1[k]["inputs"]["latent_image"]
+            assert v0[k]["inputs"]["seed"] == v1[k]["inputs"]["seed"]
+            continue
+        assert v0[k] == v1[k], f"node {k} mudou alem da referencia"
+
+
+def test_painel_exige_aceite_para_custom_node():
+    codigo = _celula("#@title 0")
+    assert "IPADAPTER_ACK" in codigo
+    assert "COM_REFERENCIA and not IPADAPTER_ACK" in codigo
+
+
+def test_mascara_enviada_ao_comfy_e_a_resolvida():
+    """No modo red_marks o arquivo cru E a arte: mandar ele ao LoadImageMask
+    faria o ComfyUI tratar a imagem inteira como area editavel."""
+    c3 = _codigo("#@title 3")
+    assert "MASK_RESOLVED" in c3
+    assert "msk_img.save(MASK_RESOLVED)" in c3
+    assert "MSK = MASK_RESOLVED" in c3
+    assert "MASK_CHANNEL_EFFECTIVE" in c3
+    assert "MASK_CHANNEL_EFFECTIVE" in _codigo("#@title 6")
+
+
+def test_recipe_separa_licenca_do_ipadapter():
+    c7 = _codigo("#@title 7")
+    assert "ipadapter_weights" in c7
+    assert "Apache-2.0" in c7
+    assert "ipadapter_node_commit" in c7
+
+
+def test_lock_registra_os_pesos_do_ipadapter_sem_fingir_download():
+    import yaml
+    lock = yaml.safe_load((ROOT / "config" / "models.lock.yaml").read_text())
+    ipa = lock["models"]["ip_adapter_plus_sdxl"]
+    assert ipa["weights"]["verified"] is False
+    assert all(f["sha256"] is None for f in ipa["weights"]["files"])
+    assert ipa["license"]["name"] == "Apache-2.0"
+    assert ipa["license"]["commercial_status"] == "pending_human_review"
+    assert ipa["custom_node_ack_required"] is True
