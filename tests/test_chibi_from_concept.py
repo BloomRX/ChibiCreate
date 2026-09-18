@@ -156,3 +156,35 @@ def test_clona_a_branch_de_trabalho():
     c1 = _codigo("#@title 1")
     assert "REPO_BRANCH" in c1 or "arena/01a07ece-chibicreate" in _celula("#@title 0")
     assert "--branch" in c1
+
+
+def test_todas_as_celulas_de_codigo_sao_colapsaveis():
+    """Colab so colapsa a celula que tem #@title; sem isso a visualizacao
+    fica poluida de codigo."""
+    for celula in _nb()["cells"]:
+        if celula["cell_type"] != "code":
+            continue
+        primeira = "".join(celula["source"]).split("\n")[0]
+        assert primeira.startswith("#@title"), primeira
+        assert 'display-mode: "form"' in primeira, primeira
+
+
+def test_notebook_clona_o_comfyui():
+    """Sem isto a celula de execucao morre com
+    "can't open file '/content/ComfyUI/main.py'"."""
+    c1 = _codigo("#@title 1.")
+    assert "ComfyUI.git" in c1
+    assert "COMFY_COMMIT" in c1
+
+
+def test_subida_do_comfy_avisa_se_faltar_o_clone():
+    c = _codigo("#@title 5c")
+    assert "BLOCKED" in c
+    assert "celula 1" in c
+
+
+def test_subida_do_comfy_usa_o_interpretador_da_sessao():
+    """'python' pode nao existir no runtime; sys.executable sempre existe."""
+    c = _codigo("#@title 5c")
+    assert "sys.executable, 'main.py'" in c
+    assert "['python', 'main.py'" not in c
