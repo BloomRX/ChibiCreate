@@ -188,3 +188,40 @@ def test_subida_do_comfy_usa_o_interpretador_da_sessao():
     c = _codigo("#@title 5c")
     assert "sys.executable, 'main.py'" in c
     assert "['python', 'main.py'" not in c
+
+
+def test_celula_de_pesos_nao_sobrescreve_o_caminho_do_repo():
+    """REPO e o clone do ChibiCreate (celula 1) e vira cwd na celula 6.
+    Reusar o nome para o repo do HuggingFace fazia o subprocess tentar
+    entrar em 'Comfy-Org/vae-...' e morrer com FileNotFoundError."""
+    import re
+    c5 = _celula("#@title 5.")
+    codigo = [l for l in c5.split("\n") if not l.strip().startswith("#")]
+    maus = [l for l in codigo if re.search(r"(?<!_)\bREPO\b", l)]
+    assert not maus, maus
+    assert "HF_REPO" in c5
+
+
+def test_nenhum_global_maiusculo_definido_em_duas_celulas():
+    """Colisao de nome entre celulas descarta silenciosamente o valor certo."""
+    import collections, re
+    defs = collections.defaultdict(set)
+    for celula in _nb()["cells"]:
+        if celula["cell_type"] != "code":
+            continue
+        fonte = "".join(celula["source"])
+        titulo = fonte.split("\n")[0]
+        for linha in fonte.split("\n"):
+            if linha.strip().startswith("#"):
+                continue
+            m = re.match(r"^([A-Z][A-Z0-9_]{1,})\s*=\s*", linha)
+            if m:
+                defs[m.group(1)].add(titulo)
+    repetidos = {k: v for k, v in defs.items() if len(v) > 1}
+    assert not repetidos, repetidos
+
+
+def test_celula_6_confere_o_repo_antes_de_executar():
+    c6 = _codigo("#@title 6.")
+    assert "nao aponta para o clone do ChibiCreate" in c6
+    assert "BLOCKED" in c6
