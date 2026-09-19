@@ -1,0 +1,13 @@
+{
+  "_comment": "Procedencia dos sheets de mannequin. Uma entrada por animacao.",
+  "_licenca_global": {
+    "fonte": "Mixamo (Adobe)",
+    "verificado_em": "2026-09-19",
+    "uso_comercial": true,
+    "atribuicao_exigida": false,
+    "redistribuicao_de_arquivos_brutos": "PROIBIDA — nao commitar FBX/.blend/keyframes",
+    "uso_para_treino_de_ml": "PROIBIDO pela FAQ da Adobe",
+    "url": "https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html"
+  },
+  "animations": []
+}
