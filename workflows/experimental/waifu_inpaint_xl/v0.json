@@ -1,0 +1,161 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "%%INPAINT_CKPT%%"
+    },
+    "_note": "Waifu-Inpaint-XL: UNet de 9 canais. Se o loader falhar, PARAR."
+  },
+  "5": {
+    "class_type": "ModelSamplingDiscrete",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "sampling": "%%SAMPLING_TYPE%%",
+      "zsnr": "%%ZSNR%%"
+    },
+    "_note": "Derivado de V14.0-V-Prediction. eps produziria imagem queimada."
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "%%PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "%%NEGATIVE_PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "%%SOURCE_IMAGE%%"
+    },
+    "_note": "CHIBI JA GERADO. Nao e a personagem real."
+  },
+  "11": {
+    "class_type": "LoadImageMask",
+    "inputs": {
+      "image": "%%OUTFIT_MASK%%",
+      "channel": "%%MASK_CHANNEL%%"
+    },
+    "_note": "Mascara semantica da roupa. NAO e o crop outfit.png."
+  },
+  "12": {
+    "class_type": "GrowMask",
+    "inputs": {
+      "mask": [
+        "11",
+        0
+      ],
+      "expand": "%%MASK_DILATION%%",
+      "tapered_corners": true
+    },
+    "_note": "Margem de seguranca para reconstruir bordas."
+  },
+  "13": {
+    "class_type": "FeatherMask",
+    "inputs": {
+      "mask": [
+        "12",
+        0
+      ],
+      "left": "%%MASK_FEATHER%%",
+      "top": "%%MASK_FEATHER%%",
+      "right": "%%MASK_FEATHER%%",
+      "bottom": "%%MASK_FEATHER%%"
+    },
+    "_note": "Transicao suave na borda; evita costura visivel."
+  },
+  "20": {
+    "class_type": "InpaintModelConditioning",
+    "inputs": {
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "pixels": [
+        "10",
+        0
+      ],
+      "mask": [
+        "13",
+        0
+      ],
+      "noise_mask": true
+    },
+    "_note": "NAO usar VAEEncodeForInpaint: ele exige denoise 1.0. Este node preserva o conteudo sob a mascara, permitindo INPAINT_STRENGTH < 1.0."
+  },
+  "40": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "5",
+        0
+      ],
+      "positive": [
+        "20",
+        0
+      ],
+      "negative": [
+        "20",
+        1
+      ],
+      "latent_image": [
+        "20",
+        2
+      ],
+      "seed": "%%SEED%%",
+      "steps": "%%STEPS%%",
+      "cfg": "%%CFG%%",
+      "sampler_name": "%%SAMPLER%%",
+      "scheduler": "%%SCHEDULER%%",
+      "denoise": "%%INPAINT_STRENGTH%%"
+    }
+  },
+  "41": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "40",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "42": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "41",
+        0
+      ],
+      "filename_prefix": "%%OUTPUT_PREFIX%%"
+    }
+  },
+  "_mode": "INPAINT_PURE_NO_REFERENCE",
+  "_test": "TESTE_1"
+}

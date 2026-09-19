@@ -1,0 +1,68 @@
+# Perfil de segmentacao de vestuario — CHARACTER-SPECIFIC (waifu_001).
+#
+# ATENCAO. Tudo neste arquivo foi calibrado NESTA personagem e vale SO para
+# ela. Nada aqui e default global: uma personagem sem `masks.yaml` e
+# segmentada apenas pela estrategia generica de `scripts/chibi/mask_engine.py`,
+# com limiares derivados da propria arte.
+#
+# Este arquivo e OPCIONAL. Remova-o e a segmentacao continua funcionando —
+# com qualidade menor nos pontos anotados abaixo.
+#
+# Procedencia de cada valor: medida em characters/waifu_001/reference/
+# full_body.png. Ver docs/research/2026-09-09-design-transfer.md.
+
+id: waifu_001
+
+# Estrategia por peca. Nomes de algoritmo do motor generico; troque apenas se
+# a peca desta personagem exigir tratamento diferente do padrao.
+strategy: {}
+
+# Limiares que substituem a derivacao automatica.
+#
+# Por que apenas estes dois: a derivacao generica acerta luminancia (Otsu =
+# 86), eixo cromatico e ate a cintura (0.5195, contra 0.52 medido a mao). Ela
+# FALHA em leg_left/leg_right porque a barra da capa se espalha pelo chao e a
+# mediana de ocupacao das colunas passa a cobrir a largura inteira (0.0-1.0).
+# Sem o override, a faixa do calcado protege a largura toda e rouba a barra
+# da capa, que para em y=0.90 em vez de descer ate ~0.99.
+thresholds:
+  # Colunas ocupadas pelas PERNAS, em fracao da largura do sujeito.
+  # Medido pelas meias-calcas: x_rel [0.29, 0.78], com margem.
+  leg_left: 0.26
+  leg_right: 0.81
+
+# Regioes protegidas adicionais, alem das cinco padrao
+# (cabeca, cabelo, pele, meias, sapatos). Vazio: as padrao bastam.
+protected_regions: {}
+
+# Restricoes geometricas por peca, em fracoes da caixa do sujeito.
+region_definitions: {}
+
+# Ajustes da anatomia estrutural. Vazio: os valores genericos servem.
+geometric_constraints: {}
+
+# Dicas de cor. Vazio: o motor deriva destaque e pele da propria imagem.
+# Preencha se a personagem tiver paleta atipica (ex.: ornamentos prateados
+# em vez de dourados, ou pele nao-humana).
+#   accent_rgb: [200, 160, 40]
+#   accent_tolerance: 60
+#   skin_rgb: [239, 215, 205]
+color_hints: {}
+
+# Sementes de conectividade, quando a semente geometrica padrao nao servir.
+connectivity_seeds: {}
+
+# Anotacoes manuais para a revisao humana.
+manual_hints: {}
+
+# Rigidez por peca. Vazio: usa o padrao REGIONAL (ornamento = rigido,
+# tecido = cloth), que e propriedade do tipo de peca, nao da personagem.
+rigidity: {}
+
+notes: >-
+  Personagem de referencia da linha experimental de design transfer.
+  Tecido da capa e FRIO (R-B negativo) e a meia-calca e QUENTE (R-B
+  positivo); o cabelo fica entre os dois e por isso e isolado por
+  conectividade, nao por cor. Essa relacao e especifica desta arte:
+  outra personagem pode ter a roupa quente e a pele fria, e o motor
+  generico lida com isso porque deriva os limiares por percentil.

@@ -1,0 +1,109 @@
+{
+  "_comment": [
+    "FASE 3A - workflow experimental minimo do Qwen-Image-Edit-2511.",
+    "Objetivo: provar que o motor executa de forma controlavel. NAO e o Flow 02",
+    "e NAO produz Chibi Master.",
+    "",
+    "Formato: API do ComfyUI (o formato aceito por POST /prompt). NAO e o",
+    "formato da UI. Placeholders %%NOME%% sao substituidos pela nossa CLI.",
+    "",
+    "[TEST REQUIRED] Este grafo nunca foi executado contra um ComfyUI real:",
+    "nao ha GPU neste ambiente. Os nomes de classe seguem os nodes nativos do",
+    "template oficial image_qwen_image_edit_2511. Validar com 'chibi comfy",
+    "validate' antes da primeira execucao de verdade."
+  ],
+
+  "1": {
+    "class_type": "UNETLoader",
+    "_meta": {"title": "Qwen-Image-Edit-2511 (diffusion model)"},
+    "inputs": {
+      "unet_name": "%%UNET_NAME%%",
+      "weight_dtype": "%%WEIGHT_DTYPE%%"
+    }
+  },
+
+  "2": {
+    "class_type": "CLIPLoader",
+    "_meta": {"title": "Text encoder (Qwen2.5-VL)"},
+    "inputs": {
+      "clip_name": "%%CLIP_NAME%%",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+
+  "3": {
+    "class_type": "VAELoader",
+    "_meta": {"title": "VAE"},
+    "inputs": {"vae_name": "%%VAE_NAME%%"}
+  },
+
+  "4": {
+    "class_type": "LoadImage",
+    "_meta": {"title": "Imagem de referencia (input)"},
+    "inputs": {"image": "%%INPUT_IMAGE%%", "upload": "image"}
+  },
+
+  "5": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {"title": "Prompt positivo + referencia"},
+    "inputs": {
+      "prompt": "%%PROMPT%%",
+      "clip": ["2", 0],
+      "vae": ["3", 0],
+      "image1": ["4", 0]
+    }
+  },
+
+  "6": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {"title": "Prompt negativo"},
+    "inputs": {
+      "prompt": "%%NEGATIVE_PROMPT%%",
+      "clip": ["2", 0],
+      "vae": ["3", 0]
+    }
+  },
+
+  "7": {
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {"title": "Canvas de saida"},
+    "inputs": {
+      "width": "%%WIDTH%%",
+      "height": "%%HEIGHT%%",
+      "batch_size": 1
+    }
+  },
+
+  "8": {
+    "class_type": "KSampler",
+    "_meta": {"title": "Sampler"},
+    "inputs": {
+      "seed": "%%SEED%%",
+      "steps": "%%STEPS%%",
+      "cfg": "%%CFG%%",
+      "sampler_name": "%%SAMPLER%%",
+      "scheduler": "%%SCHEDULER%%",
+      "denoise": "%%DENOISE%%",
+      "model": ["1", 0],
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["7", 0]
+    }
+  },
+
+  "9": {
+    "class_type": "VAEDecode",
+    "_meta": {"title": "Decode"},
+    "inputs": {"samples": ["8", 0], "vae": ["3", 0]}
+  },
+
+  "10": {
+    "class_type": "SaveImage",
+    "_meta": {"title": "Output"},
+    "inputs": {
+      "images": ["9", 0],
+      "filename_prefix": "%%OUTPUT_PREFIX%%"
+    }
+  }
+}

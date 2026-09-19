@@ -1,0 +1,235 @@
+# FASE 3B — BLOCKED
+
+**Data:** 2026-09-08 · **Status:** `[BLOCKED]` — parado conforme a seção 20 da spec.
+
+> A Fase 3B só é SUCCESS com GPU cloud funcionando. Não há como provisionar
+> GPU a partir deste ambiente. Parei e reportei, sem improvisar outro modelo
+> e sem forçar execução local.
+
+---
+
+## Por que está bloqueado
+
+### 1. Nenhuma credencial de cloud
+
+```
+env | grep -i (runpod|vast|modal|aws|gcp|azure|replicate|hf_|token)
+  -> GH_TOKEN, GITHUB_TOKEN     (apenas GitHub)
+
+~/.aws  ~/.config/gcloud  ~/.runpod  ~/.modal.toml  ~/.vast_api_key
+  -> nenhum existe
+```
+
+### 2. Nenhuma CLI de provider
+
+`runpodctl` `aws` `gcloud` `az` `modal` `vastai` `docker` `kubectl`
+`terraform` — **todas ausentes**. Só existe `ssh`.
+
+### 3. Egress bloqueado para todos os providers
+
+```
+RunPod API    BLOQUEADO      PyPI      HTTP 200
+Vast.ai       BLOQUEADO      GitHub    HTTP 200
+Modal         BLOQUEADO
+Replicate     BLOQUEADO
+HuggingFace   BLOQUEADO   <- impede baixar os pesos mesmo com GPU
+HF CDN        BLOQUEADO
+```
+
+A rede deste sandbox libera apenas PyPI e GitHub. Mesmo que houvesse GPU
+local, **os pesos não poderiam ser baixados**: o Hugging Face está bloqueado.
+
+### 4. Hardware local (inalterado desde o ADR-006)
+
+Sem GPU · 3 GB de RAM · 20 GB de disco, contra 57,7 GB de pesos.
+
+### Conclusão
+
+São **quatro bloqueios independentes**, e cada um sozinho já impede a fase.
+A autorização de download dos pesos (seção 7) não pôde ser exercida porque o
+host de download está inacessível.
+
+---
+
+## O que a seção 20 exige, e o estado de cada item
+
+| # | Critério | Estado |
+|---|---|---|
+| 1 | GPU cloud funcionando | ❌ impossível neste ambiente |
+| 2 | ComfyUI funcionando | ❌ depende de (1) |
+| 3 | Qwen carregando | ❌ depende de (1) |
+| 4 | Workflow validado contra `/object_info` | ⚠️ mecanismo pronto e testado; não confrontado com servidor real |
+| 5 | Primeira execução real | ❌ depende de (1) |
+| 6 | Segunda execução real | ❌ depende de (1) |
+| 7 | Output recuperado | ⚠️ caminho completo testado contra backend simulado |
+| 8 | Recipes criadas | ✅ estrutura completa, incluindo os campos novos |
+| 9 | Hashes registrados | ✅ input e output |
+| 10 | VRAM medida | ⚠️ instrumentação pronta; sem GPU para medir |
+| 11 | Tempo medido | ⚠️ instrumentação pronta |
+| 12 | Custo estimado | ⚠️ cálculo pronto e testado |
+| 13 | Resultado visual para revisão humana | ❌ depende de (1) |
+
+---
+
+## O que foi feito nesta fase (sem GPU)
+
+A spec pedia campos de recipe (seção 14) e cobertura de erros (seção 16) que
+**não** dependem de GPU. Isso foi implementado, para que a execução real, ao
+acontecer, já grave tudo:
+
+### Campos novos no recipe
+
+`gpu` (nome, tipo, VRAM total, VRAM livre no início, nº de devices) ·
+`vram_peak_bytes` · `cuda` · `execution_time` · `timings` (connect, upload,
+execution, download, total) · `cost_estimate`.
+
+Todos lidos **do próprio servidor**. Quando o backend não informa, o campo
+fica `None`: um recipe que mente sobre hardware é pior que um incompleto.
+
+### Honestidade das medições
+
+- `vram_peak_bytes` é `vram_free` antes menos depois, via `/system_stats`.
+  **Não é o pico instantâneo** durante a inferência — e o recipe diz isso no
+  campo `vram_note`.
+- `cost_estimate` traz, no próprio JSON: *"NÃO é custo de produção: exclui
+  cold start, download de pesos, tempo ocioso e tentativas descartadas."*
+- `cuda` é extraído de `pytorch_version` (`2.6.0+cu124` → `12.4`) quando o
+  ComfyUI não expõe o campo diretamente.
+
+### Cobertura de erros (seção 16)
+
+| Erro exigido | Teste |
+|---|---|
+| ComfyUI offline | `test_comfyui_unavailable` |
+| model missing / class_type inválido | `test_invalid_workflow_is_rejected` |
+| workflow inválido | `test_empty_workflow_refused_before_network` |
+| malformed input | `test_upload_missing_file` |
+| timeout | `test_timeout_is_raised_and_explains` |
+| empty output | `test_completed_without_image_is_an_error` |
+| **OOM** | `test_oom_during_real_execution_is_readable` |
+| retry infinito | `test_no_retry_on_failure` |
+
+OOM produz `KSampler (8): CUDA out of memory` — legível, com o node
+identificado. **Não há retry** em lugar nenhum: verificado por teste que
+conta as submissões (exatamente 1) e por varredura do fonte.
+
+### Execução ponta a ponta contra backend
+
+Seis testes novos exercitam o caminho **não-dry-run** completo — upload,
+submit, wait, download, medição, recipe — contra um ComfyUI simulado que fala
+o protocolo real. Inclui o teste das duas execuções da seção 11 e a garantia
+de que o servidor **nunca** recebe `%%PLACEHOLDER%%` cru.
+
+**115 testes passando** (26 + 46 + 43).
+
+---
+
+## Tentativa de desbloqueio — 2026-09-08
+
+Houve autorização explícita para executar a prova real em GPU. A FASE A
+(preflight) foi executada e **parou no primeiro item crítico**, como manda a
+regra: nenhuma GPU foi acionada.
+
+```
+$ chibi comfy status --env cloud
+  NAO CONFIGURADO: ambiente 'cloud': endereco do ComfyUI nao definido.
+  exit = 1
+
+$ chibi comfy preflight --env cloud
+  [FALHA] endpoint: NOT_CONFIGURED
+  NAO PRONTO — 1 bloqueio(s): NOT_CONFIGURED em 'endpoint'
+  exit = 1
+```
+
+Ambiente reverificado na mesma data — **nada mudou**:
+
+| Item | Estado |
+|---|---|
+| `CHIBI_COMFY_URL` | não definida |
+| GPU local | ausente |
+| RunPod / Vast / Modal | egress bloqueado |
+| huggingface.co | egress bloqueado |
+| PyPI / GitHub | acessíveis |
+
+A autorização para executar existe; o **endpoint** é que não existe. Nenhuma
+substituição foi feita: nem outro modelo, nem execução local, nem dry-run
+apresentado como execução real.
+
+**FASE 3B permanece BLOCKED.**
+
+---
+
+## Preparação concluída (Fase 3B.1)
+
+O repositório já está pronto para a execução real: existe
+`chibi comfy preflight`, model discovery, coleta de GPU/VRAM/CUDA e proteção
+de credenciais. **Basta fornecer `CHIBI_COMFY_URL`** — nenhuma alteração de
+código será necessária. Passo a passo em
+`docs/fase-3b-como-conectar-gpu.md`.
+
+---
+
+## Estado oficial — confirmado em 2026-09-08
+
+```
+FASE 3B = BLOCKED
+Blocker único: NO REAL GPU ENDPOINT (GPU NVIDIA / ComfyUI real)
+```
+
+**Não** marcar como `COMPLETE` — não houve execução.
+**Não** marcar como `FAILED` — nada falhou; falta infraestrutura.
+
+### Hardware local (decisão registrada, não problema em aberto)
+
+| Componente | Especificação |
+|---|---|
+| CPU | AMD Ryzen 5 5500 |
+| GPU | AMD Radeon RX 580 8 GB (Polaris / gfx803) |
+| RAM | 16 GB |
+| GPU NVIDIA | inexistente |
+
+A inferência do Qwen-Image-Edit-2511 **não será realizada localmente**. Não
+tentar ROCm experimental, DirectML, Vulkan como atalho, inferência em CPU,
+quantização improvisada nem troca automática de modelo — avaliados na pesquisa
+e descartados. A RX 580 fica para Godot, imagem, Flow 01, spritesheet e
+tarefas auxiliares.
+
+A execução futura exige **GPU NVIDIA com VRAM adequada à configuração
+escolhida**. O `min_vram_gb: 24` de `cloud.yaml` é o *target inicial de
+infraestrutura, não uma garantia universal de execução* — acompanha o dtype
+(BF16 ~40.9 GB · fp8 ~20.5 GB · Q4_K_M ~13.2 GB) e é lido da config, sem
+número hardcoded no código.
+
+### Auditoria do `cloud.yaml` (verificada por grep, não por leitura)
+
+| Critério | Resultado |
+|---|---|
+| credentials / tokens / secrets literais | nenhum |
+| paths absolutos da máquina local | nenhum |
+| dependência da RX 580 / AMD / ROCm | nenhuma |
+| URL ou IP hardcoded | nenhum |
+| `base_url` | `None` — resolvido em runtime via `CHIBI_COMFY_URL` |
+
+Configuração genérica: serve para qualquer endpoint ComfyUI.
+
+---
+
+## Como destravar
+
+Qualquer uma das opções, **por decisão humana**:
+
+1. **Fornecer um endpoint ComfyUI já rodando** (o mais simples):
+   ```bash
+   export CHIBI_COMFY_URL=http://<host>:8188
+   export CHIBI_COMFY_TOKEN=<token>
+   chibi comfy status --env cloud
+   ```
+   Basta que o host seja alcançável a partir deste sandbox.
+
+2. **Liberar egress + credenciais** para um provider, e instalar a CLI dele.
+
+3. **Executar noutro ambiente**: rodar `chibi experiment qwen-edit` de uma
+   máquina com acesso à GPU. O código não depende deste sandbox — é o ponto
+   do ADR-006.
+
+O procedimento completo está em `docs/fase-3a-como-executar.md`.

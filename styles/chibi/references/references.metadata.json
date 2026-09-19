@@ -1,0 +1,184 @@
+{
+  "_comment": "Inventario das referencias de estilo. Registra o que e verificavel SEM abrir a imagem: nome, categoria, sha256 e tamanho, lidos dos ponteiros Git LFS. NAO contem analise visual.",
+  "generated_on": "2026-09-08",
+  "commit": "a980798",
+  "note": "Commit a980798 'Chibi Ref Update' substituiu os 12 arquivos por versoes menores (3.0 MB no total, contra ~6.3 MB antes). Os sha256 mudaram; o inventario abaixo reflete os arquivos ATUAIS.",
+  "visual_analysis": {
+    "performed": false,
+    "reason": "LFS_CDN_BLOCKED",
+    "detail": "Arquivos em Git LFS. git-lfs nao instalado e github-cloud.githubusercontent.com bloqueado por egress. Retestado apos o commit a980798: as URLs assinadas sao obtidas (12/12) mas o download falha no TLS. O tamanho menor nao alterou o resultado — o bloqueio e de rede, nao de volume.",
+    "paths_tried": [
+      "lfs-batch-api",
+      "codeload-tarball",
+      "github-raw",
+      "api-contents-raw"
+    ],
+    "unblocks_with": "anexar as imagens na conversa, ou git lfs pull numa maquina com acesso",
+    "agent_viewed_in_conversation": {
+      "date": "2026-09-08",
+      "items": [
+        "Chibi1.png"
+      ],
+      "count": 1,
+      "of_total": 12,
+      "file_on_disk": false,
+      "note": "Anexada na conversa e vista pelo agente. Nao chegou ao filesystem (/home/user/uploads inexistente), portanto nao foi possivel conferir sha256 contra o ponteiro LFS versionado nem medir pixels. Corroboracao qualitativa apenas."
+    },
+    "download_attempts": [
+      {
+        "date": "2026-09-08",
+        "method": "github.com/raw/refs/heads/<branch>/... ?download=",
+        "result": "FAILED",
+        "detail": "TLS EOF. Filtragem por hostname no handshake: api.github.com (140.82.116.6) responde 200, github.com (140.82.116.4), raw. e media.githubusercontent.com fecham a conexao."
+      },
+      {
+        "date": "2026-09-08",
+        "method": "Google Drive shared folder (1X4YqCH84Zf...)",
+        "result": "FAILED",
+        "detail": "TLS EOF em drive.google.com, docs.google.com, www.googleapis.com e ate www.google.com. Dominio Google inteiro fora da allowlist — nao e questao de permissao da pasta compartilhada."
+      }
+    ],
+    "network_allowlist_probe": {
+      "date": "2026-09-08",
+      "reachable": [
+        "api.github.com",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "codeload.github.com"
+      ],
+      "blocked": [
+        "huggingface.co",
+        "drive.google.com",
+        "docs.google.com",
+        "www.googleapis.com",
+        "www.google.com",
+        "dropbox.com",
+        "i.imgur.com",
+        "raw.githubusercontent.com",
+        "media.githubusercontent.com",
+        "github-cloud.githubusercontent.com",
+        "github.com"
+      ],
+      "conclusion": "Egress e allowlist estrita por hostname, nao bloqueio de CDN especifica. Nenhum servico de hospedagem de arquivo de terceiros vai funcionar. Unico caminho para pixels: anexo direto na conversa QUE CHEGUE AO FILESYSTEM."
+    },
+    "agent_pixel_access": true,
+    "resolved_at": "2026-09-08",
+    "resolution": {
+      "commit": "054c7cf",
+      "how": "Usuario comentou as regras *.png/*.jpg no .gitattributes e recommitou os arquivos como blob comum. O conteudo passou a viajar dentro do proprio repositorio, sem depender da CDN do LFS.",
+      "verified": "magic bytes PNG/JFIF + PIL abre as 12"
+    },
+    "measurement_limits": {
+      "silhouette_segmentation": "NAO CONFIAVEL",
+      "reason": "As 6 referencias chibi sao capturas de tela de jogo, com fundo de UI, molduras, texto e palco. Segmentacao por contraste devolve 64-88% de cobertura, ou seja, esta pegando o cenario, nao a personagem. Medir head_to_body_ratio automaticamente aqui daria numero errado com aparencia de precisao.",
+      "consequence": "Campos numericos seguem null; observacao qualitativa e valida."
+    }
+  },
+  "files": {
+    "chibi": [
+      {
+        "file": "Chibi1.png",
+        "bytes": 149611,
+        "sha256": "37640177a19409aa1541f03ce9a3cfd07634332b87e15e79e3cf767957eb9e07",
+        "width": 221,
+        "height": 391,
+        "mode": "RGBA"
+      },
+      {
+        "file": "Chibi2.png",
+        "bytes": 268858,
+        "sha256": "e5d43305bec3bb6d29880ad8a3af9d20dc8dc89f2262bbf98157a64aa2b89ed5",
+        "width": 370,
+        "height": 431,
+        "mode": "RGBA"
+      },
+      {
+        "file": "chibi3.jpg",
+        "bytes": 36116,
+        "sha256": "2d0f8c8f3fb72988ee63ce944f7aaef9cc03b70999f5a2c52da9a6e0f13e6fa9",
+        "width": 354,
+        "height": 390,
+        "mode": "RGB"
+      },
+      {
+        "file": "chibi4.jpg",
+        "bytes": 31865,
+        "sha256": "19ab3214708ec5d160c3ff6e506dd7e1d69da291b18d71a5e4f180267b09e2d1",
+        "width": 303,
+        "height": 325,
+        "mode": "RGB"
+      },
+      {
+        "file": "chibi5.jpg",
+        "bytes": 34437,
+        "sha256": "52c673b2b0a4d24e41173ce3957b4eed679aba4caf9a84eb9ded5474dea5ae3c",
+        "width": 295,
+        "height": 390,
+        "mode": "RGB"
+      },
+      {
+        "file": "chibi6.jpg",
+        "bytes": 17753,
+        "sha256": "b527c2c50ca672d7081350c3ae3b02a4f686e4ea082d8798328c281aae5c2a96",
+        "width": 171,
+        "height": 300,
+        "mode": "RGB"
+      }
+    ],
+    "splash": [
+      {
+        "file": "splash1.png",
+        "bytes": 1364204,
+        "sha256": "4eaabf66ab1f2e381bf6ef7ab690fff68fc31b6ea7bc4d7b99d7a6a05967fea3",
+        "width": 920,
+        "height": 1968,
+        "mode": "RGB"
+      },
+      {
+        "file": "splash2.jpg",
+        "bytes": 340203,
+        "sha256": "f6702c4405ac86a648464f0a98e3f64382cfe10f3da483d011d292feb5e08886",
+        "width": 931,
+        "height": 1246,
+        "mode": "RGB"
+      },
+      {
+        "file": "splash3.png",
+        "bytes": 1026940,
+        "sha256": "d74fefd07df0308e5d723e3838379e7a34fa276cae5050a3b6e27334ad31ded6",
+        "width": 920,
+        "height": 1968,
+        "mode": "RGB"
+      },
+      {
+        "file": "splash4.png",
+        "bytes": 1086838,
+        "sha256": "4ac716618798c728706b58ae35637d271757030bfec5fe2c57d3934f8df388cd",
+        "width": 920,
+        "height": 1968,
+        "mode": "RGB"
+      },
+      {
+        "file": "splash5.png",
+        "bytes": 1027418,
+        "sha256": "28d27cc37a93bf9a057e1c176dc380c62e371440b6b567dd3451fc7a002d477f",
+        "width": 920,
+        "height": 1968,
+        "mode": "RGB"
+      },
+      {
+        "file": "splash6.png",
+        "bytes": 936541,
+        "sha256": "a74bc5daa9e09914232078b3ac9c48bb6a90e5169490186864aa0d03e6d8caf6",
+        "width": 920,
+        "height": 1968,
+        "mode": "RGB"
+      }
+    ]
+  },
+  "counts": {
+    "chibi": 6,
+    "splash": 6,
+    "total_bytes": 3120065
+  }
+}
