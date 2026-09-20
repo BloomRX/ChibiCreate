@@ -43,6 +43,61 @@ apenas a grade de frames.
 Sintomas a procurar no loop: franja que muda de forma, chifre que encolhe,
 contorno que "ferve", cor que oscila de um quadro para o outro.
 
+## Modos de pose (dropdown `POSE_INPUT_MODE`)
+
+Todos usam o **mesmo checkpoint**. Muda só a imagem que entra no slot de pose
+— e, no último, uma LoRA. Compare **um fator de cada vez**.
+
+| Modo | Sinal de controle | Custo extra |
+|---|---|---|
+| `render_direto` | render cinza do mannequin | nenhum |
+| `dwpose_skeleton` | esqueleto DWPose | custom node |
+| `depth_map` | mapa de profundidade | custom node |
+| `depth_map_lora` | depth + RefControl LoRA | custom node + 92 MB |
+
+Cada modo grava ZIP, sheet e GIF com o nome do modo, para não sobrescrever os
+anteriores.
+
+### Por que o esqueleto tende a ser melhor para chibi
+
+O render sólido carrega **proporção humana e volume de adulto** — exatamente o
+que contamina a chibi. Um esqueleto carrega **só articulação**. Como observado
+na comunidade: sem elementos visuais extras na imagem de pose, o modelo não
+reproduz detalhes indesejados dela.
+
+`[TEST REQUIRED]` — hipótese, não fato medido.
+
+## Por que NÃO há opção "ControlNet"
+
+Pesquisa em 2026-09-19: **não existe ControlNet dedicado para FLUX.2 klein
+4B**. O que existe não serve:
+
+| Opção | Base | Impedimento |
+|---|---|---|
+| InstantX Union, XLabs | FLUX.1 dev | base errada |
+| Alibaba Fun ControlNet Union | FLUX.2 dev | base errada |
+| RefControl pose/lineart/canny/normal | klein **9B** | **licença não-comercial** |
+| RefControl depth | klein **4B** | ✓ único viável |
+
+A 9B é não-comercial por decisão da própria BFL, já registrada em
+`models.lock.yaml`. As LoRAs de **pose** da família RefControl só existem para
+9B — por isso o modo com LoRA usa **depth**, não pose.
+
+Oferecer um modo "ControlNet" seria criar dropdown com opção inexistente.
+
+## Risco da LoRA: `base_mismatch`
+
+A RefControl declara base `FLUX.2-klein-base-4B` — a variante **não
+destilada**. O pipeline usa `flux-2-klein-4b.safetensors`, a **destilada**.
+São pesos diferentes.
+
+Aplicar LoRA na base errada normalmente **degrada em silêncio**: gera imagem
+plausível com aderência fraca e **nenhum erro**. Se `depth_map_lora` render
+pouco, a causa pode ser esta, não a técnica. Registrado como
+`base_mismatch: true` no lock e impresso no notebook.
+
+`[TEST REQUIRED]`
+
 ## Limitação técnica conhecida
 
 `ReferenceLatent` **não é ControlNet**. A pose do mannequin *influencia* a

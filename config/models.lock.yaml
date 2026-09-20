@@ -238,6 +238,83 @@ models:
           size_bytes: 336211292
           sha256: 868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3
 
+  refcontrol_klein_4b_depth_lora:
+    role: pose_control_experimental
+    display_name: RefControl FLUX.2 klein 4B — reference+depth LoRA
+    repo: thedeoxen/refcontrol-FLUX.2-klein-4B-reference-depth-lora
+    source_url: https://huggingface.co/thedeoxen/refcontrol-FLUX.2-klein-4B-reference-depth-lora
+    revision: 0ae1ef7f9acc4e55ec2237360943c3c3032d3583
+    revision_date: "2026-05-28T05:53:04.000Z"
+    status: experimental_candidate
+    required_for_phase: null
+    runs_on: cloud
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-19"
+      technical_status: verified
+      commercial_status: approved
+      evidence: >
+        /api/models em 2026-09-19: "license:apache-2.0" nos tags e
+        cardData.license = apache-2.0. gated=false, private=false.
+        Licenca independente da do FLUX.2 klein 4B — registrar separado.
+    files:
+      flux2_klein_4b_refcontrol_depth.safetensors:
+        size_bytes: 92426784
+        sha256: 65ec4c71fa7538b2201481928609a5836773f0dc06a4041b2d28abd05826c401
+        note: sha256 = campo lfs.oid do HuggingFace. NAO conferido localmente.
+    trigger_word: refcontrol
+    recommended_weight: "0.8-1.0"
+    requires_preprocessor: comfyui_controlnet_aux (depth)
+
+    # ATENCAO — INCOMPATIBILIDADE POTENCIAL DE BASE. [TEST REQUIRED]
+    #
+    # O card declara base_model = black-forest-labs/FLUX.2-klein-base-4B,
+    # a variante NAO DESTILADA (~50 steps, guidance ~4.0).
+    # O pipeline usa flux-2-klein-4b.safetensors, a variante DESTILADA.
+    #
+    # Sao pesos diferentes (sha256 ec3d4e73... vs 9c5fed22...). Aplicar uma
+    # LoRA na base errada tipicamente DEGRADA EM SILENCIO: gera imagem
+    # plausivel com aderencia fraca, sem erro nenhum. Nao concluir nada sobre
+    # a LoRA sem antes confirmar em qual base ela esta rodando.
+    base_model_declarado: black-forest-labs/FLUX.2-klein-base-4B
+    base_model_do_pipeline: flux-2-klein-4b.safetensors (destilada)
+    base_mismatch: true
+
+    # A familia RefControl tem pose/lineart/canny/normal — SOMENTE para
+    # klein 9B, cuja licenca e NAO-COMERCIAL. Para 4B so existe depth.
+    # NAO substituir por variante 9B.
+    variantes_9b_disponiveis: "pose, lineart, canny, normal — NAO USAR (9B = nao-comercial)"
+
+  comfyui_controlnet_aux:
+    role: preprocessor_nodes
+    display_name: comfyui_controlnet_aux (Fannovel16)
+    kind: custom_node
+    repo: Fannovel16/comfyui_controlnet_aux
+    source_url: https://github.com/Fannovel16/comfyui_controlnet_aux
+    revision: 59b1fc411ede8623b2997855b8018f0b3b6cf49f
+    revision_date: "2026-08-27T22:30:17Z"
+    status: experimental_candidate
+    required_for_phase: null
+    runs_on: cloud
+    license:
+      spdx: Apache-2.0
+      commercial_use: allowed
+      verified: true
+      verified_on: "2026-09-19"
+      technical_status: verified
+      commercial_status: approved
+      evidence: >
+        LICENSE do repositorio e Apache-2.0. Fornece PRE-PROCESSADORES
+        (DWPose, depth, lineart, canny), nao pesos de ControlNet.
+    note: >
+      Custom node autorizado explicitamente pelo usuario em 2026-09-19 para a
+      fase de pose transfer. Clonar SEMPRE pinado neste commit — nao usar o
+      main flutuante. Os preprocessadores baixam seus proprios modelos ONNX
+      em runtime (DWPose: yzd-v/DWPose); registrar o que for efetivamente
+      baixado na execucao.
+
   qwen_image_controlnet_union:
     role: pose_control
     display_name: Qwen-Image-ControlNet-Union (InstantX)

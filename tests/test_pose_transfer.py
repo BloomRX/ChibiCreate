@@ -260,3 +260,125 @@ def test_nenhum_binario_de_rig_versionado():
         p for p in MANNEQUIN_DIR.rglob("*") if p.suffix.lower() in proibidos
     ]
     assert not achados, achados
+
+
+# --- modos de pose (dropdown) --------------------------------------------
+
+MODOS = ["render_direto", "dwpose_skeleton", "depth_map", "depth_map_lora"]
+
+
+def test_dropdown_lista_exatamente_os_modos_suportados():
+    fonte = _celula("#@title 0.")
+    m = re.search(r'POSE_INPUT_MODE = "\w+"\s+#@param (\[[^\]]*\])', fonte)
+    assert m, "POSE_INPUT_MODE nao e um dropdown"
+    assert json.loads(m.group(1)) == MODOS
+
+
+def test_nao_oferece_controlnet_real_que_nao_existe_para_klein_4b():
+    """Nao ha ControlNet dedicado para FLUX.2 klein 4B (pesquisa 2026-09-19).
+
+    Oferecer a opcao criaria um dropdown com valor inexistente.
+    """
+    fonte = _celula("#@title 0.")
+    m = re.search(r'POSE_INPUT_MODE = "\w+"\s+#@param (\[[^\]]*\])', fonte)
+    for modo in json.loads(m.group(1)):
+        assert "controlnet" not in modo.lower()
+    assert "ControlNetLoader" not in _todo_codigo()
+
+
+def test_preprocessador_e_validado_contra_object_info():
+    """Nao criar dropdown com opcao inexistente; nao degradar em silencio."""
+    codigo = _codigo("#@title 3b.")
+    assert "/object_info" in codigo
+    assert "nao existe neste servidor" in codigo
+    assert "BLOCKED" in codigo
+
+
+def test_custom_node_e_pinado_por_commit():
+    codigo = _codigo("#@title 1.")
+    assert "AUX_COMMIT" in codigo
+    assert "59b1fc411ede8623b2997855b8018f0b3b6cf49f" in codigo
+    assert "esperado" in codigo  # verifica o HEAD apos o checkout
+
+
+def test_lora_so_no_modo_que_a_usa():
+    painel = _celula("#@title 0.")
+    assert 'USA_LORA = POSE_INPUT_MODE == "depth_map_lora"' in painel
+    v1 = json.loads(WORKFLOW.read_text(encoding="utf-8"))
+    assert not any(
+        isinstance(v, dict) and str(v.get("class_type", "")).startswith("Lora")
+        for v in v1.values()
+    ), "v1 nao pode ter LoRA"
+
+
+def test_v2_encadeia_a_lora_no_caminho_do_model():
+    """Validar a CADEIA, nao o vizinho direto."""
+    caminho = WORKFLOW.parent / "v2.json"
+    wf = json.loads(caminho.read_text(encoding="utf-8"))
+    nodes = {k: v for k, v in wf.items() if not k.startswith("_")}
+    ks = next(k for k, v in nodes.items() if v["class_type"] == "KSampler")
+    cadeia, cur = [], nodes[ks]["inputs"]["model"]
+    while isinstance(cur, list):
+        cadeia.append(nodes[cur[0]]["class_type"])
+        cur = nodes[cur[0]]["inputs"].get("model")
+    assert "LoraLoaderModelOnly" in cadeia
+    assert "UNETLoader" in cadeia
+
+
+def test_lora_tem_sha256_pinado_e_licenca_registrada():
+    yaml = pytest.importorskip("yaml")
+    lock = yaml.safe_load((RAIZ / "config" / "models.lock.yaml").read_text("utf-8"))
+    ent = lock["models"]["refcontrol_klein_4b_depth_lora"]
+    assert ent["license"]["spdx"] == "Apache-2.0"
+    assert ent["license"]["commercial_use"] == "allowed"
+    arq = ent["files"]["flux2_klein_4b_refcontrol_depth.safetensors"]
+    assert len(arq["sha256"]) == 64
+    assert ent["revision"] == "0ae1ef7f9acc4e55ec2237360943c3c3032d3583"
+
+
+def test_base_mismatch_da_lora_esta_documentado():
+    """A LoRA declara base NAO destilada; o pipeline usa a destilada.
+
+    Isso degrada em silencio. Tem de estar visivel no lock e no notebook.
+    """
+    yaml = pytest.importorskip("yaml")
+    lock = yaml.safe_load((RAIZ / "config" / "models.lock.yaml").read_text("utf-8"))
+    ent = lock["models"]["refcontrol_klein_4b_depth_lora"]
+    assert ent["base_mismatch"] is True
+    assert "base_mismatch" in _todo_codigo()
+    assert "[TEST REQUIRED]" in _celula("#@title 6.")
+
+
+def test_variante_9b_nao_comercial_e_recusada():
+    yaml = pytest.importorskip("yaml")
+    lock = yaml.safe_load((RAIZ / "config" / "models.lock.yaml").read_text("utf-8"))
+    ent = lock["models"]["refcontrol_klein_4b_depth_lora"]
+    assert "NAO USAR" in ent["variantes_9b_disponiveis"]
+    assert "9B" not in _todo_codigo() or "nao-comercial" in _todo_codigo().lower()
+
+
+def test_sha256_da_lora_e_conferido_antes_de_usar():
+    codigo = _codigo("#@title 6.")
+    assert "sha256" in codigo.lower()
+    assert "nao confere" in codigo
+
+
+def test_custom_node_registrado_no_lock():
+    yaml = pytest.importorskip("yaml")
+    lock = yaml.safe_load((RAIZ / "config" / "models.lock.yaml").read_text("utf-8"))
+    ent = lock["models"]["comfyui_controlnet_aux"]
+    assert ent["license"]["spdx"] == "Apache-2.0"
+    assert ent["revision"] == "59b1fc411ede8623b2997855b8018f0b3b6cf49f"
+
+
+def test_saidas_nao_se_sobrescrevem_entre_modos():
+    """Comparar os 4 modos exige que cada um grave num arquivo proprio."""
+    assert "POSE_INPUT_MODE" in _codigo("#@title 9.")  # nome do zip
+    codigo8 = _codigo("#@title 8.")
+    assert "POSE_INPUT_MODE" in codigo8  # sheet e gif
+
+
+def test_recipe_registra_o_modo_e_o_preprocessador():
+    codigo = _codigo("#@title 9.")
+    assert "pose_input_mode" in codigo
+    assert "preprocessor" in codigo
