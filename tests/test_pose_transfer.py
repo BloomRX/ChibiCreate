@@ -382,3 +382,42 @@ def test_recipe_registra_o_modo_e_o_preprocessador():
     codigo = _codigo("#@title 9.")
     assert "pose_input_mode" in codigo
     assert "preprocessor" in codigo
+
+
+def test_nenhuma_variavel_global_usada_sem_ser_definida():
+    """Copiar celula de outro notebook sem levar suas dependencias.
+
+    Foi assim que 'UPLOAD_DIR' (nome do chibi_from_concept) sobrou aqui e
+    quebrou a celula 1 DEPOIS de clonar o ComfyUI.
+    """
+    codigo = [
+        "".join(c["source"]) for c in _nb()["cells"] if c["cell_type"] == "code"
+    ]
+    definidos: set[str] = set()
+    for fonte in codigo:
+        for linha in fonte.split("\n"):
+            if linha.strip().startswith("#"):
+                continue
+            m = re.match(r"^\s*([A-Z][A-Z0-9_]{1,})\s*(?:=|,)", linha)
+            if m:
+                definidos.add(m.group(1))
+            for alvo in re.findall(r"^\s*for\s+([A-Z][A-Z0-9_]{1,})\s+in\s", linha):
+                definidos.add(alvo)
+    # nomes de outros notebooks que nao existem aqui
+    proibidos = {"UPLOAD_DIR", "CONCEPT", "COMFY_IN_DIR", "MSK", "SRC"}
+    for fonte in codigo:
+        for nome in proibidos:
+            if re.search(rf"\b{nome}\b", fonte) and nome not in definidos:
+                raise AssertionError(
+                    f"{nome} usado sem definicao em: {fonte.split(chr(10))[0]}"
+                )
+
+
+def test_celula_1_valida_dependencias_antes_do_clone():
+    """A guarda tem de vir ANTES do clone, nao 30 linhas depois."""
+    codigo = _celula("#@title 1. Rep")
+    pos_guarda = codigo.index("Rode a celula 0")
+    pos_clone = codigo.index('"git","clone"')
+    assert pos_guarda < pos_clone, "guarda depois do clone nao poupa tempo"
+    for nome in ("REPO", "UP_POSE", "USA_PREPROCESSADOR"):
+        assert nome in codigo[:pos_guarda + 200]
