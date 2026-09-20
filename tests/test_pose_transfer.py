@@ -421,3 +421,65 @@ def test_celula_1_valida_dependencias_antes_do_clone():
     assert pos_guarda < pos_clone, "guarda depois do clone nao poupa tempo"
     for nome in ("REPO", "UP_POSE", "USA_PREPROCESSADOR"):
         assert nome in codigo[:pos_guarda + 200]
+
+
+def _placeholders(caminho: Path) -> set[str]:
+    wf = json.loads(caminho.read_text(encoding="utf-8"))
+    return {
+        v
+        for k, n in wf.items()
+        if not k.startswith("_")
+        for v in n.get("inputs", {}).values()
+        if isinstance(v, str) and v.startswith("%%")
+    }
+
+
+@pytest.mark.parametrize("versao", ["v1.json", "v2.json"])
+def test_celula_de_execucao_resolve_todos_os_placeholders(versao):
+    """Todo %%X%% do workflow precisa ser preenchido antes do submit.
+
+    Faltavam 8 (UNET_NAME, CLIP_NAME, VAE_NAME, WEIGHT_DTYPE, SAMPLER,
+    SCHEDULER, DENOISE, WIDTH/HEIGHT) e o erro so aparecia em execucao real.
+    """
+    codigo = _celula("#@title 7.") + _celula("#@title 0.")
+    faltando = []
+    for ph in _placeholders(WORKFLOW.parent / versao):
+        nome = ph.strip("%")
+        campo = {
+            "UNET_NAME": "unet_name", "CLIP_NAME": "clip_name",
+            "VAE_NAME": "vae_name", "WEIGHT_DTYPE": "weight_dtype",
+            "SAMPLER": "sampler_name", "SCHEDULER": "scheduler",
+            "DENOISE": "denoise", "WIDTH": "width", "HEIGHT": "height",
+            "SEED": "seed", "STEPS": "steps", "CFG": "cfg",
+            "PROMPT": "text", "OUTPUT_PREFIX": "filename_prefix",
+            "INPUT_IMAGE": "image", "INPUT_IMAGE_2": "image",
+            "INPUT_IMAGE_3": "image",
+            "LORA_NAME": "lora_name", "LORA_STRENGTH": "strength_model",
+        }[nome]
+        if f'"{campo}"' not in codigo and f"[{campo!r}]" not in codigo:
+            faltando.append(ph)
+    assert not faltando, faltando
+
+
+def test_nomes_dos_pesos_sao_conferidos_no_disco():
+    codigo = _codigo("#@title 7.")
+    assert "flux-2-klein-4b.safetensors" in codigo
+    assert "Rode a celula 5" in codigo
+
+
+def test_resolucao_de_saida_e_multipla_de_16():
+    codigo = _codigo("#@title 7.")
+    assert "// 16) * 16" in codigo
+
+
+def test_nao_ha_caminho_do_comfyui_hardcodado_na_execucao():
+    """COMFY vem da celula 1; hardcodar quebra fora do Colab e ao mover."""
+    codigo = _codigo("#@title 7.")
+    assert "/content/ComfyUI" not in codigo
+
+
+def test_denoise_1_esta_justificado_por_escrito():
+    """A regra 'denoise nunca 1.0' e da fase img2img; aqui e outra coisa."""
+    codigo = _celula("#@title 7.")
+    assert "denoise" in codigo
+    assert "ReferenceLatent" in codigo
