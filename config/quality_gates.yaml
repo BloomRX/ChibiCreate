@@ -1,0 +1,84 @@
+# ChibiCreate — quality gates
+#
+# Gates sao TECNICOS. Nenhum gate julga qualidade artistica (spec §21).
+# Todos os thresholds sao configuraveis. Nao inventar metrica artistica.
+#
+# severity:
+#   error = bloqueia a transicao de estado
+#   warn  = registra, nao bloqueia
+
+schema_version: 1
+
+gates:
+
+  INPUT_VALID:
+    enabled: true
+    severity: error
+    description: "Arquivo de source existe, formato valido, dimensao aceitavel."
+    params:
+      allowed_formats: [png, jpg, jpeg, webp]
+      min_width: 512
+      min_height: 512
+      max_pixels: 67108864       # ~8192x8192, guarda contra arquivo absurdo
+
+  ALPHA_VALID:
+    enabled: true
+    severity: error
+    description: "Alpha presente onde exigido; deteccao simples de halo."
+    params:
+      require_alpha: true
+      # fracao maxima de pixels em alpha intermediario (0<a<255) na borda.
+      # Halo tipicamente aparece como anel largo de alpha parcial.
+      max_semitransparent_ratio: 0.15
+      # nenhum pixel totalmente opaco deve tocar a borda do canvas
+      forbid_edge_contact: true
+
+  CANVAS_VALID:
+    enabled: true
+    severity: error
+    description: "Dimensao do canvas bate com config/project.yaml."
+    params:
+      tolerance_px: 0
+
+  PALETTE_VALID:
+    enabled: true
+    severity: warn
+    description: >
+      Distancia de paleta entre o artefato e o Chibi Master aprovado.
+      Sinaliza drift de cor. NAO julga se ficou bonito.
+    params:
+      n_clusters: 8
+      color_space: lab
+      # distancia media maxima (deltaE aproximado) entre clusters pareados
+      max_mean_distance: 12.0
+      max_single_distance: 25.0
+
+  ASSET_HASHED:
+    enabled: true
+    severity: error
+    description: "Todo asset canonico possui sha256 registrado."
+
+  RECIPE_PRESENT:
+    enabled: true
+    severity: error
+    description: "Todo asset aprovado possui <asset>.recipe.json valido."
+    params:
+      required_fields:
+        - artifact
+        - artifact_sha256
+        - flow
+        - workflow
+        - base_model
+        - input_images
+        - seed
+        - approval_status
+
+  GODOT_EXPORT_VALID:
+    enabled: true
+    severity: error
+    description: "SpriteFrames/atlas validos e contagem de frames esperada."
+    params:
+      require_spriteframes: true
+      require_atlas_json: true
+      # contagens vem de config/project.yaml animation.defaults
+      enforce_frame_count: true

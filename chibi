@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Entrypoint da CLI. Usa .venv se existir, senao o python do sistema.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+PYTHONPATH="$ROOT/scripts${PYTHONPATH:+:$PYTHONPATH}" exec "$PY" -m chibi.cli "$@"

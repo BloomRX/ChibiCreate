@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "flow": "01_character_reference",
+  "character_id": "waifu_001",
+  "generated_at": "2026-09-08T05:00:31+00:00",
+  "deterministic": true,
+  "method": "normalizacao + recorte heuristico (sem IA generativa)",
+  "primary_source": {
+    "filename": "waifu_001.png",
+    "sha256": "cc118bb18ed3c1b87780a0e894936a487072f49dee6223b27d30fc4d1481f2fc",
+    "size": [
+      768,
+      1152
+    ],
+    "mode": "RGB",
+    "selection": "maior area em pixels (criterio mecanico, nao estetico)"
+  },
+  "all_sources": [
+    {
+      "filename": "waifu_001.png",
+      "sha256": "cc118bb18ed3c1b87780a0e894936a487072f49dee6223b27d30fc4d1481f2fc"
+    }
+  ],
+  "normalization": {
+    "source_bbox": [
+      28,
+      27,
+      746,
+      1126
+    ],
+    "scale": 0.791629,
+    "placed_at": [
+      228,
+      103
+    ],
+    "subject_size": [
+      568,
+      870
+    ],
+    "canvas": [
+      1024,
+      1024
+    ],
+    "resample": "lanczos"
+  },
+  "alpha": {
+    "origin": "ausente na fonte",
+    "stats": {
+      "total_pixels": 1048576,
+      "opaque_ratio": 0.471268,
+      "transparent_ratio": 0.528732,
+      "semitransparent_ratio": 0.0,
+      "touches_edge": false
+    }
+  },
+  "reference_roles": {
+    "full_body": "full_body.png",
+    "face": "face.png",
+    "hair": "hair.png",
+    "outfit": "outfit.png"
+  },
+  "outputs": [
+    {
+      "filename": "face.png",
+      "sha256": "fbd007089a34d3d498aec1eb0ebe0ea6e763fe47e9576d941f80f2082b8178ac"
+    },
+    {
+      "filename": "full_body.png",
+      "sha256": "2fdcd5f428f5980d63e31d4bf4a67aecbc11c1b101c19ca75f819db616cb8177"
+    },
+    {
+      "filename": "hair.png",
+      "sha256": "d48d0ceeafaa1d39b2a579440edfbea1bf04c9ba9c0f5bb9af35cdee34ad8b4a"
+    },
+    {
+      "filename": "outfit.png",
+      "sha256": "40f990c3b1efa399e774ab08a067d7c3cec06833b99e42884b2d0d33cc3cb1d8"
+    },
+    {
+      "filename": "palette.json",
+      "sha256": "6f3ed6ddf719a475acf5a217ac03f61f63c7b9dae16768d919d8a8ea309c33d5"
+    },
+    {
+      "filename": "sheet.png",
+      "sha256": "889fabb7464bf6201855e217a19a5d574607c3692ddc500538621cb753d66b03"
+    }
+  ],
+  "warnings": [
+    "'waifu_001.png' nao possui canal alpha — fundo NAO foi removido."
+  ],
+  "human_review_required": [
+    "[HUMAN REVIEW REQUIRED] A arte-fonte nao tem transparencia. Opcoes: (a) fornecer versao com alpha, ou (b) habilitar isolamento por BiRefNet (requer baixar os pesos; ver 'chibi models'). O reference sheet foi gerado com o fundo original.",
+    "[HUMAN REVIEW REQUIRED] Os recortes (face, hair, outfit) sao HEURISTICOS, baseados em fracoes da caixa do sujeito. Confira cada um e, se estiver errado, ajuste 'reference_regions' em character.yaml e rode o flow de novo."
+  ]
+}

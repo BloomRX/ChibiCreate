@@ -1,0 +1,125 @@
+{
+  "_comment": "BENCHMARK CHIBI WAI: PERSONAGEM NORMAL -> WAI -> CHIBI. IMG2IMG REAL: o latente inicial vem de full_body.png via LoadImage -> VAEEncode -> KSampler. A referencia NAO e descartada: ela E a imagem de partida (primary_image_role: source_image). denoise < 1.0 obrigatorio \u2014 com 1.0 o latente inicial seria destruido e o processo viraria txt2img. RESOLUCAO: definida pela imagem-fonte (1024x1024). Nao ha node de resize de proposito: redimensionar para 1024x1344 esticaria a arte original (aspect 1.0 -> 0.76) e a instrucao e nao deformar. VAE integrado ao checkpoint (saida 2 do CheckpointLoaderSimple). || VERSAO v0 = Runs 001/002. img2img SEM IP-Adapter: so a imagem original guia o resultado. PROIBIDO aqui: IPAdapter, ControlNet, LoRA, Hires fix, ADetailer, upscaler.",
+  "_pipeline": "img2img",
+  "_reference_count": 1,
+  "_primary_image_role": "source_image",
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "WAI-illustrious-SDXL v17.0 (VAE integrado)"
+    },
+    "inputs": {
+      "ckpt_name": "%%CKPT_NAME%%"
+    }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positivo (adaptar, nao redesenhar)"
+    },
+    "inputs": {
+      "text": "%%PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negativo (curto)"
+    },
+    "inputs": {
+      "text": "%%NEGATIVE_PROMPT%%",
+      "clip": [
+        "1",
+        1
+      ]
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "full_body.png \u2014 IMAGEM DE PARTIDA do img2img"
+    },
+    "inputs": {
+      "image": "%%REF_FULL_BODY%%"
+    }
+  },
+  "5": {
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "full_body -> latente inicial"
+    },
+    "inputs": {
+      "pixels": [
+        "4",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "41": {
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode"
+    },
+    "inputs": {
+      "samples": [
+        "40",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "42": {
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Output"
+    },
+    "inputs": {
+      "images": [
+        "41",
+        0
+      ],
+      "filename_prefix": "%%OUTPUT_PREFIX%%"
+    }
+  },
+  "40": {
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Euler a / denoise < 1.0 (img2img)"
+    },
+    "inputs": {
+      "seed": "%%SEED%%",
+      "steps": "%%STEPS%%",
+      "cfg": "%%CFG%%",
+      "sampler_name": "%%SAMPLER%%",
+      "scheduler": "%%SCHEDULER%%",
+      "denoise": "%%DENOISE%%",
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
+    }
+  }
+}

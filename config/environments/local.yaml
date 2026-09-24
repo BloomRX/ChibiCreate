@@ -1,0 +1,33 @@
+# Ambiente: local
+# Hardware alvo documentado: Ryzen 5 5500 / RX 580 8GB / 16GB RAM.
+#
+# FATO: AMD removeu Polaris/GCN4 (gfx803) do ROCm na v5.x. ComfyUI + ControlNet
+# + Qwen-Edit NAO sao considerados executaveis de forma confiavel nesta GPU.
+# Este ambiente serve para tarefas de CPU/Vulkan e trabalho artesanal.
+
+schema_version: 1
+
+name: local
+kind: workstation
+
+comfyui:
+  enabled: false
+  base_url: http://127.0.0.1:8188
+  notes: >
+    Pode ser usado apenas como GUI apontando para um backend remoto.
+    Nao habilitar execucao pesada local sem [TEST REQUIRED].
+
+capabilities:
+  gpu_inference: false
+  cpu_tools: true
+  vulkan_tools: true       # Real-ESRGAN ncnn, video2x
+  rigging: true
+  godot: true
+  image_scripting: true    # Pillow/numpy
+
+limits:
+  system_ram_gb: 16
+  vram_gb: 8
+  warning: >
+    16GB de RAM e apertado ate para trabalho local. Upgrade para 32GB tem o
+    melhor retorno do setup.

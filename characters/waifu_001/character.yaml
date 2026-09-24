@@ -1,0 +1,51 @@
+# Identidade canonica da personagem.
+#
+# REGRA: descreva o MINIMO necessario. Descricoes textuais de rosto/cabelo
+# COMPETEM com as imagens de referencia e sao a causa nº1 de drift de
+# identidade. Deixe a aparencia para reference/, use texto so para o que
+# nao da para ver numa imagem.
+
+id: waifu_001
+display_name: "Waifu 001"
+created: "2026-09-08T04:54:43+00:00"
+
+# Por que esta personagem foi escolhida / quao dificil ela e (spec §26).
+difficulty:
+  rating: null        # 1-5, preencher manualmente
+  reasons: []         # ex: [arma complexa, muitos acessorios, cabelo longo]
+
+# Traços que NAO podem se perder. Usado como checklist humano de revisao,
+# nao como prompt.
+identity_anchors: []
+# exemplo:
+#   - heterocromia (olho direito ambar)
+#   - fita vermelha no cabelo, lado esquerdo
+#   - lanterna presa ao cinto
+
+# Papeis de referencia disponiveis. Preenchido automaticamente pelo flow01.
+reference_roles:
+  face: face.png
+  full_body: full_body.png
+  hair: hair.png
+  outfit: outfit.png
+
+# Overrides dos recortes do identity kit, em fracoes da CAIXA DO SUJEITO
+# (0.0 = topo/esquerda do sujeito, 1.0 = base/direita).
+# Use quando o recorte heuristico do flow01 sair errado.
+# Exemplo:
+#   reference_regions:
+#     face:
+#       top: 0.03
+#       bottom: 0.18
+#       left: 0.25
+#       right: 0.75
+reference_regions: {}
+
+# Overrides do rig padrao definido em config/project.yaml.
+rig:
+  parts: null         # null = usa o default do projeto
+  extra_parts: []
+  omit_parts: []
+
+# Notas livres para a equipe.
+notes: ""
